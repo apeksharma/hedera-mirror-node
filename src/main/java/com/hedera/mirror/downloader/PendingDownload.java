@@ -20,6 +20,7 @@ package com.hedera.mirror.downloader;
  * ‍
  */
 
+import com.amazonaws.SdkBaseException;
 import com.amazonaws.services.s3.transfer.Download;
 import com.google.common.base.Stopwatch;
 import lombok.Value;
@@ -27,6 +28,9 @@ import lombok.experimental.NonFinal;
 import lombok.extern.log4j.Log4j2;
 
 import java.io.File;
+import java.nio.file.Path;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 
 import static com.amazonaws.services.s3.transfer.Transfer.TransferState.Completed;
 
@@ -38,19 +42,29 @@ import static com.amazonaws.services.s3.transfer.Transfer.TransferState.Complete
 @Log4j2
 @Value
 public class PendingDownload {
-	Download download;
+	final Download s3Download;
+	final CompletableFuture<Path> gcpDownload;
 	Stopwatch stopwatch;
 	File file; // Destination file
-	String s3key; // Source S3 key
+	String objectKey; // Source S3/GCP key
 	@NonFinal boolean alreadyWaited = false; // has waitForCompletion been called
 	@NonFinal boolean downloadSuccessful;
 
-	public PendingDownload(final Download download, final File file, final String s3key) {
-		this.download = download;
-		this.stopwatch = Stopwatch.createStarted();
-		this.file = file;
-		this.s3key = s3key;
-	}
+    public PendingDownload(final Download s3Download, final File file, final String objectKey) {
+        this.s3Download = s3Download;
+        this.gcpDownload = null;
+        this.stopwatch = Stopwatch.createStarted();
+        this.file = file;
+        this.objectKey = objectKey;
+    }
+
+    public PendingDownload(final CompletableFuture<Path> gcpDownload, final File file, final String objectKey) {
+        this.s3Download = null;
+        this.gcpDownload = gcpDownload;
+        this.stopwatch = Stopwatch.createStarted();
+        this.file = file;
+        this.objectKey = objectKey;
+    }
 
 	/**
 	 * @return true if the download was successful.
@@ -61,23 +75,29 @@ public class PendingDownload {
 			return downloadSuccessful;
 		}
 		alreadyWaited = true;
-		try {
-			download.waitForCompletion();
-			if (download.isDone() && (Completed == download.getState())) {
-				log.debug("Finished downloading {} in {}", s3key, stopwatch);
-				downloadSuccessful = true;
-			} else {
-				log.error("Failed downloading {} after {}", s3key, stopwatch);
-				downloadSuccessful = false;
-			}
-		} catch (InterruptedException e) {
-			log.error("Failed downloading {} after {}", s3key, stopwatch, e);
-			downloadSuccessful = false;
-			throw e;
-		} catch (Exception ex) {
-			log.error("Failed downloading {} after {}", s3key, stopwatch, ex);
-			downloadSuccessful = false;
-		}
-		return downloadSuccessful;
+        try {
+            if (s3Download != null) {
+                s3Download.waitForCompletion();
+                if (s3Download.isDone() && (Completed == s3Download.getState())) {
+                    log.debug("Finished downloading {} in {}", objectKey, stopwatch);
+                    downloadSuccessful = true;
+                } else {
+                    log.error("Failed downloading {} after {}", objectKey, stopwatch);
+                    downloadSuccessful = false;
+                }
+            } else {
+                gcpDownload.get();
+                log.debug("Finished downloading {} in {}", objectKey, stopwatch);
+                downloadSuccessful = true;
+            }
+        } catch (InterruptedException e) {
+            log.error("Failed downloading {} after {}", objectKey, stopwatch, e);
+            downloadSuccessful = false;
+            throw e;
+        } catch (SdkBaseException | ExecutionException ex) {
+            log.error("Failed downloading {} after {}", objectKey, stopwatch, ex);
+            downloadSuccessful = false;
+        }
+        return downloadSuccessful;
 	}
 }

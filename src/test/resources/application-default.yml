@@ -1,8 +1,10 @@
 hedera:
   mirror:
     downloader:
-      bucketName: test
-      cloudProvider: LOCAL
+      cloudProvider: S3
+      s3:
+        endpoint: http://127.0.0.1:8001
+        bucketName: test
     network: TESTNET
 spring:
   task:

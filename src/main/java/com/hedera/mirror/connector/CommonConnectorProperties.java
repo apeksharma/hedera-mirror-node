@@ -1,4 +1,4 @@
-package com.hedera.mirror.downloader;
+package com.hedera.mirror.connector;
 
 /*-
  * ‌
@@ -27,48 +27,30 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.validation.annotation.Validated;
 
 import javax.inject.Named;
-import javax.validation.constraints.Min;
 import javax.validation.constraints.NotBlank;
 import javax.validation.constraints.NotNull;
 
 @Data
 @Named
 @Validated
-@ConfigurationProperties("hedera.mirror.downloader")
-public class CommonDownloaderProperties {
-
-    private String accessKey;
+@ConfigurationProperties("hedera.mirror.connector")
+public class CommonConnectorProperties {
+    @NotNull
+    private Provider provider = Provider.S3;
 
     @NotBlank
-    private String bucketName;
+    private String balancePrefix = "accountBalances/balance";
 
-    @NotNull
-    private CloudProvider cloudProvider = CloudProvider.S3;
+    @NotBlank
+    private String eventPrefix = "eventsStreams/events_";
 
-    @Min(0)
-    private int maxConnections = 500;
-
-    @Min(1)
-    private int maxQueued = 500;
-
-    @Min(1)
-    private int maxThreads = 60;
-
-    @Min(0)
-    private int minThreads = 20;
-
-    private String region = "us-east-1";
-
-    private String secretKey;
-
+    @NotBlank
+    private String recordPrefix = "recordstreams/record";
 
     @Getter
     @RequiredArgsConstructor
-    public enum CloudProvider {
-        S3("https://s3.amazonaws.com"),
-        GCP("https://storage.googleapis.com"),
-        LOCAL("http://127.0.0.1:8001"); // Testing
-
-        private final String endpoint;
+    public enum Provider {
+        S3,
+        GCP,
     }
 }
