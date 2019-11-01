@@ -502,7 +502,6 @@ public class EventStreamFileParser implements FileParser {
 	}
 
 	@Override
-	@Scheduled(fixedRateString = "${hedera.mirror.parser.event.frequency:60000}")
 	public void parse() {
 		try {
 			if (!parserProperties.isEnabled()) {

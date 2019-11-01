@@ -43,7 +43,6 @@ public class AccountBalancesDownloader extends Downloader {
         super(transferManager, applicationStatusRepository, networkAddressBook, downloaderProperties);
     }
 
-    @Scheduled(fixedRateString = "${hedera.mirror.downloader.balance.frequency:500}")
     public void download() {
         downloadNextBatch();
     }

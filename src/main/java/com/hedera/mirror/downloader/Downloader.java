@@ -132,7 +132,10 @@ public abstract class Downloader {
 		 * For each node, create a thread that will make S3 ListObject requests as many times as necessary to
 		 * start maxDownloads download operations.
 		 */
-		for (String nodeAccountId : nodeAccountIds) {
+        final int numNodes = nodeAccountIds.size();
+		for (int i = 0 ; i < numNodes; i++) {
+		    final String nodeAccountId = nodeAccountIds.get(i);
+		    final int index = i;
 			tasks.add(Executors.callable(() -> {
 				log.debug("Downloading signature files for node {} created after file {}", nodeAccountId, lastValidFileName);
 				// Get a list of objects in the bucket, 100 at a time
@@ -142,77 +145,104 @@ public abstract class Downloader {
 				Stopwatch stopwatch = Stopwatch.createStarted();
 
 				try {
-					// batchSize (number of items we plan do download in a single batch) times 2 for file + sig
-					// + 5 for any other files we may skip
-					final var listSize = (downloaderProperties.getBatchSize() * 2) + 5;
-					ListObjectsRequest listRequest = new ListObjectsRequest()
-							.withBucketName(downloaderProperties.getCommon().getBucketName())
-							.withPrefix(prefix)
-							.withDelimiter("/")
-							.withMarker(prefix + lastValidFileName)
-							.withMaxKeys(listSize);
-					ObjectListing objects = transferManager.getAmazonS3Client().listObjects(listRequest);
-					var pendingDownloads = new LinkedList<PendingDownload>();
-					// Loop through the list of remote files beginning a download for each relevant sig file.
+                    // batchSize (number of items we plan do download in a single batch) times 2 for file + sig
+                    // + 5 for any other files we may skip
+                    final var listSize = (downloaderProperties.getBatchSize() * 2) + 5;
+                    ListObjectsRequest listRequest = new ListObjectsRequest()
+                            .withBucketName(downloaderProperties.getCommon().getBucketName())
+                            .withPrefix(prefix)
+                            .withDelimiter("/")
+                            .withMarker(prefix + lastValidFileName)
+                            .withMaxKeys(listSize);
+                    ObjectListing objects = transferManager.getAmazonS3Client().listObjects(listRequest);
+                    var pendingDownloads = new LinkedList<PendingDownload>();
+                    var pendingDataDownloads = new LinkedList<PendingDownload>();
+                    // Loop through the list of remote files beginning a download for each relevant sig file.
 
-					while (downloadCount <= downloadMax) {
-						List<S3ObjectSummary> summaries = objects.getObjectSummaries();
-						for (S3ObjectSummary summary : summaries) {
-							if (downloadCount >= downloadMax) {
-								break;
-							}
+                    while (downloadCount <= downloadMax) {
+                        List<S3ObjectSummary> summaries = objects.getObjectSummaries();
+                        for (S3ObjectSummary summary : summaries) {
+                            if (downloadCount >= downloadMax) {
+                                break;
+                            }
 
-							String s3ObjectKey = summary.getKey();
+                            String s3ObjectKey = summary
+                                    .getKey();  // example value "recordstreams/record0.0.3/2019-09-13T21_53_51.396440Z.rcd_sig
 
-							if (s3ObjectKey.endsWith("_sig") &&
-									(s3KeyComparator.compare(s3ObjectKey, prefix + lastValidFileName) > 0 || lastValidFileName.isEmpty())) {
-								Path saveTarget = downloaderProperties.getStreamPath().getParent().resolve(s3ObjectKey);
-								try {
-									pendingDownloads.add(saveToLocalAsync(s3ObjectKey, saveTarget));
+                            if (s3ObjectKey.endsWith("_sig") &&
+                                    (s3KeyComparator
+                                            .compare(s3ObjectKey, prefix + lastValidFileName) > 0 || lastValidFileName
+                                            .isEmpty())) {
+                                Path saveTarget = downloaderProperties.getStreamPath().getParent().resolve(s3ObjectKey);
+                                try {
+                                    pendingDownloads.add(saveToLocalAsync(s3ObjectKey, saveTarget));
                                     downloadCount++;
                                     totalDownloads.incrementAndGet();
-								} catch (Exception ex) {
-									log.error("Failed downloading {}", s3ObjectKey, ex);
-									return;
-								}
-							}
-						}
-						if (downloadCount >= downloadMax) {
-							break;
-						} else if (objects.isTruncated()) {
-							objects = transferManager.getAmazonS3Client().listNextBatchOfObjects(objects);
-						} else {
-							break;
-						}
-					}
+                                } catch (Exception ex) {
+                                    log.error("Failed downloading {}", s3ObjectKey, ex);
+                                    return;
+                                }
+                                if (s3ObjectKey.hashCode()%numNodes == index) {
+                                    String dataFileName = s3ObjectKey.substring(s3ObjectKey.lastIndexOf("/") + 1);
+                                    Path saveDataTarget = downloaderProperties.getTempPath().resolve(dataFileName);
+                                    try {
+                                        pendingDataDownloads.add(
+                                                saveToLocalAsync(s3ObjectKey.replace("_sig", ""), saveDataTarget));
+                                    } catch (ception e) {
+                                        log.error("Failed downloading {}", s3ObjectKey, e);
+                                        retu;
+                                    }
+                                }
+                            }
+                        }
+                        if (downloadCount >= downloadMax) {
+                            break;
+                        } else if (objects.isTruncated()) {
+                            objects = transferManager.getAmazonS3Client().listNextBatchOfObjects(objects);
+                        } else {
+                            break;
+                        }
+                    }
 
-					/*
-					 * With the list of pending downloads - wait for them to complete and add them to the list
-					 * of downloaded signature files.
-					 */
-					var ref = new Object() {
-						int count = 0;
-					};
-					pendingDownloads.forEach((pd) -> {
-						try {
-							if (pd.waitForCompletion()) {
-								ref.count++;
-								File sigFile = pd.getFile();
-								String fileName = sigFile.getName();
-								sigFilesMap.putIfAbsent(fileName, Collections.synchronizedList(new ArrayList<>()));
-								List<File> files = sigFilesMap.get(fileName);
-								files.add(sigFile);
-							}
-						} catch (InterruptedException ex) {
-							log.error("Failed downloading {} in {}", pd.getS3key(), pd.getStopwatch(), ex);
-						}
-					});
-					if (ref.count > 0) {
-						log.info("Downloaded {} signatures for node {} in {}", ref.count, nodeAccountId, stopwatch);
-					}
-				} catch (Exception e) {
-					log.error("Error downloading signature files for node {} after {}", nodeAccountId, stopwatch, e);
-				}
+                    /*
+                     * With the list of pending downloads - wait for them to complete and add them to the list
+                     * of downloaded signature files.
+                     */
+                    var ref = new Object() {
+                        int count = 0;
+                    };
+                    pendingDownloads.forEach((pd) -> {
+                        try {
+                            if (pd.waitForCompletion()) {
+                                ref.count++;
+                                File sigFile = pd.getFile();
+                                String fileName = sigFile.getName();
+                                sigFilesMap.putIfAbsent(fileName, Collections.synchronizedList(new ArrayList<>()));
+                                List<File> files = sigFilesMap.get(fileName);
+                                files.add(sigFile);
+                            }
+                        } catch (InterruptedException ex) {
+                            log.error("Failed downloading {} in {}", pd.getS3key(), pd.getStopwatch(), ex);
+                        }
+                    });
+                    if (ref.count > 0) {
+                        log.info("Downloaded {} signatures for node {} in {}", ref.count, nodeAccountId, stopwatch);
+                    }
+                    long successfulDataDownloads = pendingDataDownloads.parallelStream().mapToInt((pd) -> {
+                        try {
+                            return pd.waitForCompletion() ? 1 : 0;
+                        } catch (InterruptedException e) {
+                            log.error("Failed downloading {} in {}", pd.getS3key(), pd.getStopwatch(), e);
+                            return 0;
+                        }
+                    }).count();
+                    if (successfulDataDownloads > 0) {
+                        log.info("Downloaded {} data files for node {} in {}", successfulDataDownloads, nodeAccountId, stopwatch);
+                    }
+                } catch (Exception e) {
+                    log.error("Error downloading signature files for node {} after {}", nodeAccountId, stopwatch, e);
+                }
+
 			}));
 		}
 
@@ -374,12 +404,14 @@ public abstract class Downloader {
 
     private File downloadSignedDataFile(File sigFile) {
         String fileName = sigFile.getName().replace("_sig", "");
-        String s3Prefix = downloaderProperties.getPrefix();
+        Path localFile = downloaderProperties.getTempPath().resolve(fileName);
+        if (localFile.toFile().exists()) {
+            return localFile.toFile();
+        }
 
+        String s3Prefix = downloaderProperties.getPrefix();
 		String nodeAccountId = Utility.getAccountIDStringFromFilePath(sigFile.getPath());
 		String s3ObjectKey = s3Prefix + nodeAccountId + "/" + fileName;
-
-		Path localFile = downloaderProperties.getTempPath().resolve(fileName);
 		try {
 			var pendingDownload = saveToLocalAsync(s3ObjectKey, localFile);
 			pendingDownload.waitForCompletion();

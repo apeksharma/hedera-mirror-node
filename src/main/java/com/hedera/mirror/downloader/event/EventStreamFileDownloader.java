@@ -43,7 +43,6 @@ public class EventStreamFileDownloader extends Downloader {
         super(transferManager, applicationStatusRepository, networkAddressBook, downloaderProperties);
     }
 
-    @Scheduled(fixedRateString = "${hedera.mirror.downloader.event.frequency:60000}")
     public void download() {
         downloadNextBatch();
     }
