@@ -25,7 +25,8 @@ import com.hedera.mirror.addressbook.NetworkAddressBook;
 import com.hedera.mirror.MirrorProperties;
 import com.hedera.mirror.config.MirrorNodeConfiguration;
 import com.hedera.mirror.domain.HederaNetwork;
-import com.hedera.mirror.domain.ApplicationStatusCode;
+import com.hedera.mirror.domain.StreamItem;
+import com.hedera.mirror.domain.StreamType;
 import com.hedera.mirror.downloader.CommonDownloaderProperties;
 import com.hedera.mirror.repository.ApplicationStatusRepository;
 import com.hedera.utilities.Utility;
@@ -35,11 +36,15 @@ import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
 import org.mockito.Answers;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.messaging.Message;
+import org.springframework.messaging.MessageChannel;
 
 import java.io.File;
 import java.nio.file.*;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.*;
@@ -49,6 +54,9 @@ public class AccountBalancesDownloaderTest {
 
     @Mock(answer = Answers.RETURNS_SMART_NULLS)
     private ApplicationStatusRepository applicationStatusRepository;
+
+    @Mock
+    MessageChannel channel;
 
     @TempDir
     Path dataPath;
@@ -75,11 +83,11 @@ public class AccountBalancesDownloaderTest {
         commonDownloaderProperties.setAccessKey("x"); // https://github.com/findify/s3mock/issues/147
         commonDownloaderProperties.setSecretKey("x");
         downloaderProperties = new BalanceDownloaderProperties(mirrorProperties, commonDownloaderProperties);
-        downloaderProperties.init();
         networkAddressBook = new NetworkAddressBook(mirrorProperties);
         var s3AsyncClient = (new MirrorNodeConfiguration()).s3AsyncClient(commonDownloaderProperties);
 
-        downloader = new AccountBalancesDownloader(s3AsyncClient, applicationStatusRepository, networkAddressBook, downloaderProperties);
+        downloader = new AccountBalancesDownloader(
+                s3AsyncClient, applicationStatusRepository, networkAddressBook, downloaderProperties, channel);
 
         fileCopier = FileCopier.create(Utility.getResource("data").toPath(), s3Path)
                 .from(downloaderProperties.getStreamType().getPath())
@@ -94,19 +102,25 @@ public class AccountBalancesDownloaderTest {
         s3.shutdown();
     }
 
+    void verifyStreamItems(MessageChannel channel, int callCount, List<String> filenames) {
+        ArgumentCaptor<Message> argument = ArgumentCaptor.forClass(Message.class);
+        verify(channel, times(callCount)).send(argument.capture());
+        assertThat(argument.getAllValues())
+                .extracting(p -> ((StreamItem)p.getPayload()))
+                .allMatch(p -> p.getStreamType() == StreamType.BALANCE)
+                .allMatch(p -> p.getDataType() == StreamItem.Type.PAYLOAD)
+                .extracting(StreamItem::getFileName)
+                .containsAll(filenames);
+    }
+
     @Test
     @DisplayName("Download and verify signatures")
-    void downloadAndVerify() throws Exception {
+    void downloadAndVerify() {
         fileCopier.copy();
+        doReturn(true).when(channel).send(any());
         downloader.download();
-        verify(applicationStatusRepository).updateStatusValue(ApplicationStatusCode.LAST_VALID_DOWNLOADED_BALANCE_FILE, "2019-08-30T18_30_00.010147001Z_Balances.csv");
-        assertThat(Files.walk(downloaderProperties.getValidPath()))
-                .filteredOn(p -> !p.toFile().isDirectory())
-                .hasSize(2)
-                .allMatch(p -> Utility.isBalanceFile(p.toString()))
-                .extracting(Path::getFileName)
-                .contains(Paths.get("2019-08-30T18_15_00.016002001Z_Balances.csv"))
-                .contains(Paths.get("2019-08-30T18_30_00.010147001Z_Balances.csv"));
+        verifyStreamItems(channel, 2,
+                List.of("2019-08-30T18_15_00.016002001Z_Balances.csv", "2019-08-30T18_30_00.010147001Z_Balances.csv"));
     }
 
     @Test
@@ -115,53 +129,41 @@ public class AccountBalancesDownloaderTest {
         Files.delete(mirrorProperties.getAddressBookPath());
         fileCopier.copy();
         downloader.download();
-        assertThat(Files.walk(downloaderProperties.getValidPath()))
-                .filteredOn(p -> !p.toFile().isDirectory())
-                .hasSize(0);
+        verify(channel, times(0)).send(any());
     }
 
     @Test
     @DisplayName("Max download items reached")
-    void maxDownloadItemsReached() throws Exception {
+    void maxDownloadItemsReached() {
         downloaderProperties.setBatchSize(1);
         fileCopier.copy();
+        doReturn(true).when(channel).send(any());
         downloader.download();
-        assertThat(Files.walk(downloaderProperties.getValidPath()))
-                .filteredOn(p -> !p.toFile().isDirectory())
-                .hasSize(1)
-                .allMatch(p -> Utility.isBalanceFile(p.toString()))
-                .extracting(Path::getFileName)
-                .contains(Paths.get("2019-08-30T18_15_00.016002001Z_Balances.csv"));
+        verifyStreamItems(channel, 1, List.of("2019-08-30T18_15_00.016002001Z_Balances.csv"));
     }
 
     @Test
     @DisplayName("Missing signatures")
-    void missingSignatures() throws Exception {
+    void missingSignatures() {
         fileCopier.filterFiles("*Balances.csv").copy();
         downloader.download();
-        assertThat(Files.walk(downloaderProperties.getValidPath()))
-                .filteredOn(p -> !p.toFile().isDirectory())
-                .hasSize(0);
+        verify(channel, times(0)).send(any());
     }
 
     @Test
     @DisplayName("Missing balances")
-    void missingBalances() throws Exception {
+    void missingBalances() {
         fileCopier.filterFiles("*_sig").copy();
         downloader.download();
-        assertThat(Files.walk(downloaderProperties.getValidPath()))
-                .filteredOn(p -> !p.toFile().isDirectory())
-                .hasSize(0);
+        verify(channel, times(0)).send(any());
     }
 
     @Test
     @DisplayName("Less than 2/3 signatures")
-    void lessThanTwoThirdSignatures() throws Exception {
+    void lessThanTwoThirdSignatures() {
         fileCopier.filterDirectories("balance0.0.3").filterDirectories("balance0.0.4").copy();
         downloader.download();
-        assertThat(Files.walk(downloaderProperties.getValidPath()))
-                .filteredOn(p -> !p.toFile().isDirectory())
-                .hasSize(0);
+        verify(channel, times(0)).send(any());
     }
 
     @Test
@@ -170,9 +172,7 @@ public class AccountBalancesDownloaderTest {
         fileCopier.copy();
         Files.walk(s3Path).filter(p -> Utility.isBalanceSigFile(p.toString())).forEach(AccountBalancesDownloaderTest::corruptFile);
         downloader.download();
-        assertThat(Files.walk(downloaderProperties.getValidPath()))
-                .filteredOn(p -> !p.toFile().isDirectory())
-                .hasSize(0);
+        verify(channel, times(0)).send(any());
     }
 
     @Test
@@ -181,18 +181,7 @@ public class AccountBalancesDownloaderTest {
         fileCopier.copy();
         Files.walk(s3Path).filter(p -> Utility.isBalanceFile(p.toString())).forEach(AccountBalancesDownloaderTest::corruptFile);
         downloader.download();
-        assertThat(Files.walk(downloaderProperties.getValidPath()))
-                .filteredOn(p -> !p.toFile().isDirectory())
-                .hasSize(0);
-    }
-
-    @Test
-    @DisplayName("Error moving file to valid folder")
-    void errorMovingFile() throws Exception {
-        fileCopier.copy();
-        downloaderProperties.getValidPath().toFile().delete();
-        downloader.download();
-        assertThat(downloaderProperties.getValidPath()).doesNotExist();
+        verify(channel, times(0)).send(any());
     }
 
     private static void corruptFile(Path p) {

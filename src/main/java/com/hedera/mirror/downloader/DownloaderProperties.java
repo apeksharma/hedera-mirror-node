@@ -21,10 +21,6 @@ package com.hedera.mirror.downloader;
  */
 
 import com.hedera.mirror.domain.StreamType;
-import com.hedera.utilities.Utility;
-
-import javax.annotation.PostConstruct;
-import java.nio.file.Path;
 
 public interface DownloaderProperties {
 
@@ -39,24 +35,7 @@ public interface DownloaderProperties {
 
     String getPrefix();
 
-    Path getStreamPath();
-
     StreamType getStreamType();
 
-    default Path getTempPath() {
-        return getStreamPath().resolve(getStreamType().getTemp());
-    }
-
-    default Path getValidPath() {
-        return getStreamPath().resolve(getStreamType().getValid());
-    }
-
     boolean isEnabled();
-
-    @PostConstruct
-    default void init() {
-        Utility.ensureDirectory(getTempPath());
-        Utility.ensureDirectory(getValidPath());
-        Utility.purgeDirectory(getTempPath());
-    }
 }

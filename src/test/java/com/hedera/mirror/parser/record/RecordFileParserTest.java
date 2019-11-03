@@ -80,7 +80,7 @@ public class RecordFileParserTest extends IntegrationTest {
     @Test
     void parse() throws Exception {
         fileCopier.copy();
-        recordFileParser.parse();
+//        recordFileParser.parse();
 
         assertThat(Files.walk(parserProperties.getParsedPath()))
                 .filteredOn(p -> !p.toFile().isDirectory())
@@ -99,14 +99,14 @@ public class RecordFileParserTest extends IntegrationTest {
     void disabled() throws Exception {
         parserProperties.setEnabled(false);
         fileCopier.copy();
-        recordFileParser.parse();
+//        recordFileParser.parse();
         assertThat(Files.walk(parserProperties.getParsedPath())).filteredOn(p -> !p.toFile().isDirectory()).hasSize(0);
         assertThat(transactionRepository.count()).isEqualTo(0L);
     }
 
     @Test
     void noFiles() throws Exception {
-        recordFileParser.parse();
+//        recordFileParser.parse();
         assertThat(Files.walk(parserProperties.getParsedPath())).filteredOn(p -> !p.toFile().isDirectory()).hasSize(0);
         assertThat(transactionRepository.count()).isEqualTo(0L);
     }
@@ -115,7 +115,7 @@ public class RecordFileParserTest extends IntegrationTest {
     void invalidFile() throws Exception {
         File recordFile = dataPath.resolve(streamType.getPath()).resolve(streamType.getValid()).resolve("2019-08-30T18_10_05.249678Z.rcd").toFile();
         FileUtils.writeStringToFile(recordFile, "corrupt", "UTF-8");
-        recordFileParser.parse();
+//        recordFileParser.parse();
         assertThat(Files.walk(parserProperties.getParsedPath())).filteredOn(p -> !p.toFile().isDirectory()).hasSize(0);
         assertThat(transactionRepository.count()).isEqualTo(0L);
     }
@@ -124,7 +124,7 @@ public class RecordFileParserTest extends IntegrationTest {
     void hashMismatch() throws Exception {
         applicationStatusRepository.updateStatusValue(ApplicationStatusCode.LAST_PROCESSED_RECORD_HASH, "123");
         fileCopier.copy();
-        recordFileParser.parse();
+//        recordFileParser.parse();
         assertThat(Files.walk(parserProperties.getParsedPath())).filteredOn(p -> !p.toFile().isDirectory()).hasSize(0);
         assertThat(transactionRepository.count()).isEqualTo(0L);
     }
@@ -134,7 +134,7 @@ public class RecordFileParserTest extends IntegrationTest {
         applicationStatusRepository.updateStatusValue(ApplicationStatusCode.LAST_PROCESSED_RECORD_HASH, "123");
         applicationStatusRepository.updateStatusValue(ApplicationStatusCode.RECORD_HASH_MISMATCH_BYPASS_UNTIL_AFTER, "2019-09-01T00:00:00.000000Z.rcd");
         fileCopier.copy();
-        recordFileParser.parse();
+//        recordFileParser.parse();
 
         assertThat(Files.walk(parserProperties.getParsedPath()))
                 .filteredOn(p -> !p.toFile().isDirectory())
@@ -152,7 +152,7 @@ public class RecordFileParserTest extends IntegrationTest {
         FileCopier.create(testPath, dataPath)
                 .from("badTimestampLongOverflowTest")
                 .to(streamType.getPath(), streamType.getValid()).copy();
-        recordFileParser.parse();
+//        recordFileParser.parse();
         assertThat(Files.walk(parserProperties.getParsedPath())).filteredOn(p -> !p.toFile().isDirectory()).hasSize(0);
         assertThat(transactionRepository.count()).isEqualTo(0L);
     }

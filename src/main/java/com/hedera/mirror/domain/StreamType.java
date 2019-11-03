@@ -32,16 +32,12 @@ public enum StreamType {
     EVENT("eventsStreams", "parsedEventStreamFiles"),
     RECORD("recordstreams", "parsedRecordFiles");
 
-    private static final String TEMP = "tmp";
     private static final String VALID = "valid";
 
     private final String path;
     private final String parsed;
 
-    public String getTemp() {
-        return TEMP;
-    }
-
+    // TODO: remove this.
     public String getValid() {
         return VALID;
     }

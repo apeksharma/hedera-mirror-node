@@ -220,28 +220,6 @@ public abstract class Downloader {
         return new PendingDownload(future, s3ObjectKey, streamItem);
     }
 
-	/**
-	 * Moves a file from one location to another
-	 * boolean: true if file moved successfully
-	 * Note: The method doesn't check if source file or destination directory exist to avoid
-	 * repeated checks that could hurt performance
-	 * @param sourceFile
-	 * @param destinationFile
-	 * @return boolean
-	 */
-	private boolean moveFile(File sourceFile, File destinationFile) {
-		try {
-			// not checking if file exists to help with performance
-			// assumption is caller has created the destination file folder
-            log.trace("Moving {} to {}", sourceFile, destinationFile);
-			Files.move(sourceFile.toPath(), destinationFile.toPath(), REPLACE_EXISTING);
-			return true;
-		} catch (IOException e) {
-			log.error("File move from {} to {} failed", sourceFile.getAbsolutePath(), destinationFile.getAbsolutePath(), e);
-			return false;
-		}
-	}
-
     /**
      *  For each group of signature Files with the same file name:
      *  (1) verify that the signature files are signed by corresponding node's PublicKey;
@@ -256,7 +234,6 @@ public abstract class Downloader {
     private void verifySigsAndDownloadDataFiles(Map<String, List<StreamItem>> sigFilesMap) {
         // reload address book and keys in case it has been updated by RecordFileLogger
         NodeSignatureVerifier verifier = new NodeSignatureVerifier(networkAddressBook);
-        Path validPath = downloaderProperties.getValidPath();
 
         List<String> sigFileNames = new ArrayList<>(sigFilesMap.keySet());
         // sort in increasing order of timestamp, so that we process files in the order they are written.
@@ -292,11 +269,12 @@ public abstract class Downloader {
                 try {
                     StreamItem signedDataStreamItem = downloadSignedDataFile(validSigStreamItem);
                     if (signedDataStreamItem != null && Utility.hashMatch(validHash, signedDataStreamItem)) {
-                        log.debug("Downloaded data file {} corresponding to verified hash", signedDataStreamItem.getFileName());
+                        log.debug("Downloaded {} corresponding to verified hash", signedDataStreamItem);
                         // Check that file is newer than last valid downloaded file.
                         // Additionally, if the file type uses prevFileHash based linking, verify that new file is next in
                         // the sequence.
                         if (verifyHashChain(signedDataStreamItem)) {
+                            log.debug("Verifier hash chain for {} ", signedDataStreamItem);
                             // move the file to the valid directory
                             if (verifiedStreamItemsChannel.send(
                                     MessageBuilder.withPayload(signedDataStreamItem).build())) {

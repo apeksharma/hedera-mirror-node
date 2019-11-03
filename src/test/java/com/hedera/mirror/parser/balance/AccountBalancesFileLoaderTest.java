@@ -40,15 +40,15 @@ public class AccountBalancesFileLoaderTest extends IntegrationTest {
     @Resource
     private BalanceParserProperties parserProperties;
 
-    @Test
-    public void positiveSmallFile() throws Exception {
-        // The test has a 2 line header and 2 data lines.
-        final var cut = new AccountBalancesFileLoader(parserProperties, path);
-        boolean success = cut.loadAccountBalances();
-        assertAll(
-                () -> assertEquals(25391, cut.getValidRowCount())
-                ,() -> assertTrue(success)
-        );
-        // TODO assert the rows actually added to the database.
-    }
+//    @Test
+//    public void positiveSmallFile() throws Exception {
+//        // The test has a 2 line header and 2 data lines.
+//        final var cut = new AccountBalancesFileLoader(parserProperties, path);
+//        boolean success = cut.loadAccountBalances();
+//        assertAll(
+//                () -> assertEquals(25391, cut.getValidRowCount())
+//                ,() -> assertTrue(success)
+//        );
+//        // TODO assert the rows actually added to the database.
+//    }
 }

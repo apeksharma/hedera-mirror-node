@@ -81,42 +81,42 @@ public class Utility {
 		byte[] fileHash = Utility.getStreamItemHash(streamItem);
 		return Arrays.equals(fileHash, hash);
 	}
+
 	/**
 	 * 1. Extract the Hash of the content of corresponding RecordStream file. This Hash is the signed Content of this signature
 	 * 2. Extract signature from the file.
 	 */
 	public static Pair<byte[], byte[]> extractHashAndSig(StreamItem streamItem) {
-		ByteBuffer data = streamItem.getDataBytes();
-		data.rewind();
-        byte[] fileHash = null;
-        byte[] sig = null;
+		byte[] sig = null;
 
-		try {
-			while (true) {
-				byte typeDelimiter = data.get();
+		try (DataInputStream dis = new DataInputStream(new ByteBufferBackedInputStream(streamItem.getDataBytes()))) {
+			byte[] fileHash = new byte[48];
+
+			while (dis.available() != 0) {
+				byte typeDelimiter = dis.readByte();
 
 				switch (typeDelimiter) {
 					case FileDelimiter.SIGNATURE_TYPE_FILE_HASH:
-                        fileHash = new byte[48];
-					    data.get(fileHash);
+						dis.read(fileHash);
 						break;
 
 					case FileDelimiter.SIGNATURE_TYPE_SIGNATURE:
-						int sigLength = data.getInt();
-						sig = new byte[sigLength];
-						data.get(sig);
+						int sigLength = dis.readInt();
+						byte[] sigBytes = new byte[sigLength];
+						dis.readFully(sigBytes);
+						sig = sigBytes;
 						break;
 					default:
-						log.error("Unknown file delimiter {} in {}", typeDelimiter, streamItem);
+						log.error("Unknown file delimiter {} in signature {}", typeDelimiter, streamItem);
 						return null;
 				}
-				if (sig != null && fileHash != null) {
-                    return Pair.of(fileHash, sig);
-                }
 			}
-		} catch (BufferOverflowException e) {
+
+			return Pair.of(fileHash, sig);
+		} catch (Exception e) {
 			log.error("Unable to extract hash and signature from {}", streamItem, e);
 		}
+
 		return null;
 	}
 

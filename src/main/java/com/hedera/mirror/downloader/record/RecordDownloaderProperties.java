@@ -58,10 +58,6 @@ public class RecordDownloaderProperties implements DownloaderProperties {
     @Min(1)
     private int threads = 13;
 
-    public Path getStreamPath() {
-        return mirrorProperties.getDataPath().resolve(getStreamType().getPath());
-    }
-
     @Override
     public StreamType getStreamType() {
         return StreamType.RECORD;
