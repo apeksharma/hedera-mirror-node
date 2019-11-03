@@ -29,6 +29,7 @@ import com.hedera.mirror.repository.ApplicationStatusRepository;
 import javassist.NotFoundException;
 import lombok.extern.log4j.Log4j2;
 
+import org.springframework.messaging.MessageChannel;
 import org.springframework.scheduling.annotation.Scheduled;
 import software.amazon.awssdk.services.s3.S3AsyncClient;
 
@@ -40,9 +41,11 @@ import java.nio.ByteBuffer;
 public class AccountBalancesDownloader extends Downloader {
 
     public AccountBalancesDownloader(
-            S3AsyncClient s3Client, ApplicationStatusRepository applicationStatusRepository,
-            NetworkAddressBook networkAddressBook, BalanceDownloaderProperties downloaderProperties) {
-        super(s3Client, applicationStatusRepository, networkAddressBook, downloaderProperties);
+            S3AsyncClient s3Client,  ApplicationStatusRepository applicationStatusRepository,
+            NetworkAddressBook networkAddressBook, BalanceDownloaderProperties downloaderProperties,
+            MessageChannel verifiedBalanceStreamItemChannel) {
+        super(s3Client, applicationStatusRepository, networkAddressBook, downloaderProperties,
+                verifiedBalanceStreamItemChannel);
     }
 
     @Scheduled(fixedRateString = "${hedera.mirror.downloader.balance.frequency:500}")
@@ -55,11 +58,11 @@ public class AccountBalancesDownloader extends Downloader {
         return true;
     }
 
-    protected ApplicationStatusCode getLastValidDownloadedFileKey() {
-        return ApplicationStatusCode.LAST_VALID_DOWNLOADED_BALANCE_FILE;
+    protected ApplicationStatusCode getLastProcessedFileNameKey() {
+        return ApplicationStatusCode.LAST_PROCESSED_BALANCE_FILENAME;
     }
 
-    protected ApplicationStatusCode getLastValidDownloadedFileHashKey() {
+    protected ApplicationStatusCode getLastProcessedFileHashKey() {
         return null;
     }
 

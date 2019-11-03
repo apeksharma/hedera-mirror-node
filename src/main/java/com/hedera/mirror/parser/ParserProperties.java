@@ -40,7 +40,7 @@ public interface ParserProperties {
         return getStreamPath().resolve(getStreamType().getValid());
     }
 
-    boolean isEnabled();
+    boolean isEnabled();  // todo: delete?
 
     @PostConstruct
     default void init() {

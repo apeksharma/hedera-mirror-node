@@ -135,7 +135,6 @@ public class RecordFileLogger {
 		batch_count = 0;
 
         connect = DatabaseUtilities.openDatabase(connect);
-
         if (connect == null) {
             log.error("Unable to connect to database");
         	return false;

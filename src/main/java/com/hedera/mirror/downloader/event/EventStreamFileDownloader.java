@@ -28,6 +28,7 @@ import com.hedera.mirror.parser.event.EventStreamFileParser;
 
 import javassist.NotFoundException;
 import lombok.extern.log4j.Log4j2;
+import org.springframework.messaging.MessageChannel;
 import org.springframework.scheduling.annotation.Scheduled;
 import software.amazon.awssdk.services.s3.S3AsyncClient;
 
@@ -40,8 +41,10 @@ public class EventStreamFileDownloader extends Downloader {
 
     public EventStreamFileDownloader(
             S3AsyncClient s3Client, ApplicationStatusRepository applicationStatusRepository,
-            NetworkAddressBook networkAddressBook, EventDownloaderProperties downloaderProperties) {
-        super(s3Client, applicationStatusRepository, networkAddressBook, downloaderProperties);
+            NetworkAddressBook networkAddressBook, EventDownloaderProperties downloaderProperties,
+            MessageChannel verifiedEventStreamItemChannel) {
+        super(s3Client, applicationStatusRepository, networkAddressBook, downloaderProperties,
+                verifiedEventStreamItemChannel);
     }
 
     @Scheduled(fixedRateString = "${hedera.mirror.downloader.event.frequency:60000}")
@@ -49,12 +52,12 @@ public class EventStreamFileDownloader extends Downloader {
         downloadNextBatch();
     }
 
-    protected ApplicationStatusCode getLastValidDownloadedFileKey() {
-        return ApplicationStatusCode.LAST_VALID_DOWNLOADED_EVENT_FILE;
+    protected ApplicationStatusCode getLastProcessedFileNameKey() {
+        return ApplicationStatusCode.LAST_PROCESSED_EVENT_FILENAME;
     }
 
-    protected ApplicationStatusCode getLastValidDownloadedFileHashKey() {
-        return ApplicationStatusCode.LAST_VALID_DOWNLOADED_EVENT_FILE_HASH;
+    protected ApplicationStatusCode getLastProcessedFileHashKey() {
+        return ApplicationStatusCode.LAST_PROCESSED_EVENT_HASH;
     }
 
     protected ApplicationStatusCode getBypassHashKey() {

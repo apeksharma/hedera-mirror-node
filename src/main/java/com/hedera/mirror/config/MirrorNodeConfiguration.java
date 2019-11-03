@@ -20,6 +20,12 @@ package com.hedera.mirror.config;
  * ‍
  */
 
+import com.hedera.mirror.parser.record.RecordFileParser;
+
+import org.springframework.integration.dsl.IntegrationFlow;
+import org.springframework.integration.dsl.IntegrationFlows;
+import org.springframework.integration.dsl.MessageChannels;
+import org.springframework.messaging.MessageChannel;
 import software.amazon.awssdk.auth.credentials.AnonymousCredentialsProvider;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider;
@@ -61,6 +67,42 @@ public class MirrorNodeConfiguration {
     @ConditionalOnProperty(prefix = "spring.task.scheduling", name = "enabled", havingValue = "true", matchIfMissing = true)
     @EnableScheduling
     protected static class SchedulingConfiguration {
+    }
+
+    @Bean
+    public MessageChannel verifiedRecordStreamItemChannel() {
+        return MessageChannels.publishSubscribe().get();
+    }
+
+    @Bean
+    public IntegrationFlow recordsFlow() {
+        return IntegrationFlows.from("verifiedRecordStreamItemChannel")
+                .handle("RecordFileParser")
+                .get();
+    }
+
+    @Bean
+    public MessageChannel verifiedEventStreamItemChannel() {
+        return MessageChannels.publishSubscribe().get();
+    }
+
+    @Bean
+    public IntegrationFlow eventsFlow() {
+        return IntegrationFlows.from("verifiedEventStreamItemChannel")
+                .handle("EventStreamFileParser")
+                .get();
+    }
+
+    @Bean
+    public MessageChannel verifiedBalanceStreamItemChannel() {
+        return MessageChannels.publishSubscribe().get();
+    }
+
+    @Bean
+    public IntegrationFlow balanceFlow() {
+        return IntegrationFlows.from("verifiedBalanceStreamItemChannel")
+                .handle("BalanceFileParser")
+                .get();
     }
 
     // TODO: Remove in Spring Boot 2.2

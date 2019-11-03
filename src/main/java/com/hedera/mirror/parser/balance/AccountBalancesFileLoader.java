@@ -20,15 +20,16 @@ package com.hedera.mirror.parser.balance;
  * ‍
  */
 
+import com.fasterxml.jackson.databind.util.ByteBufferBackedInputStream;
 import com.google.common.base.Stopwatch;
 import com.hedera.databaseUtilities.DatabaseUtilities;
+import com.hedera.mirror.domain.StreamItem;
 import com.hedera.mirror.exception.InvalidDatasetException;
 import com.hedera.mirror.util.TimestampConverter;
 import lombok.Getter;
 import lombok.extern.log4j.Log4j2;
 
 import java.io.*;
-import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
@@ -40,7 +41,7 @@ import java.util.stream.Stream;
  */
 @Log4j2
 public final class AccountBalancesFileLoader implements AutoCloseable {
-	private final Path filePath;
+	private final String fileName;
 	private final Instant filenameTimestamp;
 	private final AccountBalancesDataset dataset;
 	private final TimestampConverter timestampConverter = new TimestampConverter();
@@ -57,14 +58,14 @@ public final class AccountBalancesFileLoader implements AutoCloseable {
      * @throws InvalidDatasetException invalid file header
      * @throws FileNotFoundException
 	 */
-	public AccountBalancesFileLoader(BalanceParserProperties balanceProperties, final Path filePath) throws IllegalArgumentException, InvalidDatasetException,
-            FileNotFoundException {
-		this.filePath = filePath;
+	public AccountBalancesFileLoader(BalanceParserProperties balanceProperties, final StreamItem streamItem)
+            throws IllegalArgumentException, InvalidDatasetException {
+	    this.fileName = streamItem.getFileName();
 		this.systemShardNum = balanceProperties.getMirrorProperties().getShard();
-		final var info = new AccountBalancesFileInfo(filePath);
+		final var info = new AccountBalancesFileInfo(fileName);
 		filenameTimestamp = info.getFilenameTimestamp();
-		BufferedReader reader = new BufferedReader(new InputStreamReader(new FileInputStream(filePath.toFile())), balanceProperties.getFileBufferSize());
-		dataset = new AccountBalancesDatasetV2(filePath.getFileName().toString(), reader);
+		BufferedReader reader = new BufferedReader(new InputStreamReader(new ByteBufferBackedInputStream(streamItem.getDataBytes())));
+		dataset = new AccountBalancesDatasetV2(streamItem.getFileName(), reader);
 		insertBatchSize = balanceProperties.getBatchSize();
 	}
 
@@ -77,14 +78,14 @@ public final class AccountBalancesFileLoader implements AutoCloseable {
 		if (4 != cols.length) {
 			throw new InvalidDatasetException(String.format(
 					"Invalid line in account balances file %s:line(%d):%s",
-					filePath, line.getLineNumber(), line.getValue()));
+                    fileName, line.getLineNumber(), line.getValue()));
 		}
 
 		final var shardNum = Long.valueOf(cols[0]);
 		if (shardNum != systemShardNum) {
 			throw new InvalidDatasetException(String.format(
 					"Invalid shardNum %d in account balances file %s:line(%d):%s",
-					shardNum, filePath, line.getLineNumber(), line.getValue()));
+					shardNum, fileName, line.getLineNumber(), line.getValue()));
 		}
 
 		try {
@@ -95,7 +96,7 @@ public final class AccountBalancesFileLoader implements AutoCloseable {
 			ps.addBatch();
 		} catch (NumberFormatException e) {
 			throw new InvalidDatasetException(String.format("Invalid line in account balances file %s:line(%d):%s",
-					filePath, line.getLineNumber(), line.getValue()));
+                    fileName, line.getLineNumber(), line.getValue()));
 		}
 	}
 
@@ -150,8 +151,9 @@ public final class AccountBalancesFileLoader implements AutoCloseable {
 			// The assumption is that the dataset has been validated via signatures and running hashes, so it is
 			// the "next" dataset, and the consensus timestamp in it is correct.
 			// The fact that the filename timestamp and timestamp in the file differ should still be investigated.
-	        log.error("Account balance dataset timestamp mismatch! Processing can continue, but this must be investigated! Dataset {} internal timestamp {} filename timestamp {}.",
-                    filePath.getFileName(), filenameTimestamp, consensusTimestamp);
+	        log.error(
+	                "Account balance dataset timestamp mismatch! Processing can continue, but this must be investigated! Dataset {} internal timestamp {} filename timestamp {}.",
+                    fileName, filenameTimestamp, consensusTimestamp);
         }
 
 	    // consensusTimestamp (from file) has been signed, filenameTimestamp has not.
@@ -162,7 +164,7 @@ public final class AccountBalancesFileLoader implements AutoCloseable {
 		// 2) stream insert all the account_balances records.
 		// 3) update/close the account_balance_set.
 		//
-		log.info("Starting processing account balances file {}", filePath);
+		log.info("Starting processing account balances file {}", fileName);
 		var stopwatch = Stopwatch.createStarted();
 		try (Connection conn = DatabaseUtilities.getConnection()) {
 			final Stream<NumberedLine> stream = dataset.getRecordStream();
@@ -180,15 +182,15 @@ public final class AccountBalancesFileLoader implements AutoCloseable {
 			if (processRecordStream(insertBalance, longConsensusTimestamp, stream)) {
 				updateSet.setLong(1, longConsensusTimestamp);
 				updateSet.execute();
-				log.info("Successfully processed account balances file {} with {} records in {}", filePath,
+				log.info("Successfully processed account balances file {} with {} records in {}", fileName,
 						validRowCount, stopwatch);
 				return true;
 			} else {
-				log.error("ERRORS processing account balances file {} with {} records in {}", filePath,
+				log.error("ERRORS processing account balances file {} with {} records in {}", fileName,
 						validRowCount, stopwatch);
 			}
 		} catch (SQLException | InvalidDatasetException e) {
-			log.error("Exception processing account balances file {}", filePath, e);
+			log.error("Exception processing account balances file {}", fileName, e);
 		}
 		return false;
 	}

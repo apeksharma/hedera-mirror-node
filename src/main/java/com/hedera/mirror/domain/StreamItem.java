@@ -18,3 +18,4 @@ public class StreamItem {
         return "StreamItem{" + dataType + ", name=" + fileName + ", nodeAccountId=" + nodeAccountId + '}';
     }
 }
+

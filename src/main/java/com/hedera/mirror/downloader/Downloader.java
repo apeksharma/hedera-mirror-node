@@ -34,6 +34,8 @@ import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.tuple.Pair;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.springframework.integration.support.MessageBuilder;
+import org.springframework.messaging.MessageChannel;
 import software.amazon.awssdk.core.ResponseBytes;
 import software.amazon.awssdk.core.async.AsyncResponseTransformer;
 import software.amazon.awssdk.services.s3.S3AsyncClient;
@@ -73,13 +75,22 @@ public abstract class Downloader {
 	private final DownloaderProperties downloaderProperties;
     // Thread pool used one per node during the download process for signatures.
 	private final ExecutorService signatureDownloadThreadPool;
+	private final MessageChannel verifiedStreamItemsChannel;
+    private String lastValidFileName;
+    private String lastValidFileHash;
 
     public Downloader(S3AsyncClient s3Client, ApplicationStatusRepository applicationStatusRepository,
-                      NetworkAddressBook networkAddressBook, DownloaderProperties downloaderProperties) {
+                      NetworkAddressBook networkAddressBook, DownloaderProperties downloaderProperties,
+                      MessageChannel verifiedStreamItemsChannel) {
 	    this.s3Client = s3Client;
 		this.applicationStatusRepository = applicationStatusRepository;
 		this.networkAddressBook = networkAddressBook;
 		this.downloaderProperties = downloaderProperties;
+		this.verifiedStreamItemsChannel = verifiedStreamItemsChannel;
+		lastValidFileName = applicationStatusRepository.findByStatusCode(getLastProcessedFileNameKey());
+		if (getLastProcessedFileHashKey() != null) {
+            lastValidFileHash = applicationStatusRepository.findByStatusCode(getLastProcessedFileHashKey());
+        }
 		signatureDownloadThreadPool = Executors.newFixedThreadPool(downloaderProperties.getThreads());
 		nodeAccountIds = networkAddressBook.load().stream().map(NodeAddress::getId).collect(Collectors.toList());
         Runtime.getRuntime().addShutdownHook(new Thread(signatureDownloadThreadPool::shutdown));
@@ -114,7 +125,6 @@ public abstract class Downloader {
      */
 	private Map<String, List<StreamItem>> downloadSigFiles() throws InterruptedException {
 		String s3Prefix = downloaderProperties.getPrefix();
-		String lastValidFileName = applicationStatusRepository.findByStatusCode(getLastValidDownloadedFileKey());
         // foo.rcd < foo.rcd_sig. If we read foo.rcd from application stats, we have to start listing from
         // next to 'foo.rcd_sig'.
         String lastValidSigFileName = lastValidFileName.isEmpty() ? "" : lastValidFileName + "_sig";
@@ -288,15 +298,13 @@ public abstract class Downloader {
                         // the sequence.
                         if (verifyHashChain(signedDataStreamItem)) {
                             // move the file to the valid directory
-                            File destination = validPath.resolve(signedDataStreamItem.getName()).toFile();
-                            if (moveFile(signedDataStreamItem, destination)) {
-                                log.debug("Successfully moved file from {} to {}", signedDataStreamItem, destination);
-                                if (getLastValidDownloadedFileHashKey() != null) {
-                                    applicationStatusRepository.updateStatusValue(getLastValidDownloadedFileHashKey(),
-                                            Utility.bytesToHex(validHash));
+                            if (verifiedStreamItemsChannel.send(
+                                    MessageBuilder.withPayload(signedDataStreamItem).build())) {
+                                log.debug("Successfully sent {}", signedDataStreamItem);
+                                if (getLastProcessedFileHashKey() != null) {
+                                    lastValidFileHash = Utility.bytesToHex(validHash);
                                 }
-                                applicationStatusRepository
-                                        .updateStatusValue(getLastValidDownloadedFileKey(), destination.getName());
+                                lastValidFileName = signedDataStreamItem.getFileName();
                                 valid = true;
                                 break;
                             }
@@ -320,7 +328,6 @@ public abstract class Downloader {
      * Verifies that prevFileHash in given {@code file} matches that in application repository.
      */
     protected boolean verifyHashChain(StreamItem streamItem) {
-        String lastValidFileHash = applicationStatusRepository.findByStatusCode(getLastValidDownloadedFileHashKey());
         String bypassMismatch = applicationStatusRepository.findByStatusCode(getBypassHashKey());
         String prevFileHash;
         try {
@@ -362,8 +369,8 @@ public abstract class Downloader {
         return null;
     }
 
-    protected abstract ApplicationStatusCode getLastValidDownloadedFileKey();
-    protected abstract ApplicationStatusCode getLastValidDownloadedFileHashKey();
+    protected abstract ApplicationStatusCode getLastProcessedFileNameKey();
+    protected abstract ApplicationStatusCode getLastProcessedFileHashKey();
     protected abstract ApplicationStatusCode getBypassHashKey();
     protected abstract String getPrevFileHash(ByteBuffer data) throws NotFoundException;
 }

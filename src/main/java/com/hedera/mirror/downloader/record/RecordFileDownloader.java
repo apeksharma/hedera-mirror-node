@@ -27,8 +27,10 @@ import com.hedera.mirror.domain.ApplicationStatusCode;
 import com.hedera.mirror.repository.ApplicationStatusRepository;
 import com.hedera.mirror.parser.record.RecordFileParser;
 
+import javassist.NotFoundException;
 import lombok.Data;
 import lombok.extern.log4j.Log4j2;
+import org.springframework.messaging.MessageChannel;
 import org.springframework.scheduling.annotation.Scheduled;
 import software.amazon.awssdk.services.s3.S3AsyncClient;
 
@@ -41,8 +43,10 @@ public class RecordFileDownloader extends Downloader {
 
     public RecordFileDownloader(
             S3AsyncClient s3Client, ApplicationStatusRepository applicationStatusRepository,
-            NetworkAddressBook networkAddressBook, RecordDownloaderProperties downloaderProperties) {
-        super(s3Client, applicationStatusRepository, networkAddressBook, downloaderProperties);
+            NetworkAddressBook networkAddressBook, RecordDownloaderProperties downloaderProperties,
+            MessageChannel verifiedRecordStreamItemChannel) {
+        super(s3Client, applicationStatusRepository, networkAddressBook, downloaderProperties,
+                verifiedRecordStreamItemChannel);
     }
 
     @Scheduled(fixedRateString = "${hedera.mirror.downloader.record.frequency:500}")
@@ -50,19 +54,19 @@ public class RecordFileDownloader extends Downloader {
         downloadNextBatch();
     }
 
-    protected ApplicationStatusCode getLastValidDownloadedFileKey() {
-        return ApplicationStatusCode.LAST_VALID_DOWNLOADED_RECORD_FILE;
+    protected ApplicationStatusCode getLastProcessedFileNameKey() {
+        return ApplicationStatusCode.LAST_PROCESSED_RECORD_FILENAME;
     }
 
-    protected ApplicationStatusCode getLastValidDownloadedFileHashKey() {
-        return ApplicationStatusCode.LAST_VALID_DOWNLOADED_RECORD_FILE_HASH;
+    protected ApplicationStatusCode getLastProcessedFileHashKey() {
+        return ApplicationStatusCode.LAST_PROCESSED_RECORD_HASH;
     }
 
     protected ApplicationStatusCode getBypassHashKey() {
         return ApplicationStatusCode.RECORD_HASH_MISMATCH_BYPASS_UNTIL_AFTER;
     }
 
-    protected String getPrevFileHash(ByteBuffer data) {
+    protected String getPrevFileHash(ByteBuffer data) throws NotFoundException {
         return RecordFileParser.readPrevFileHash(data);
     }
 }

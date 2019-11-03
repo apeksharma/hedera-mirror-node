@@ -20,28 +20,28 @@ package com.hedera.mirror.parser.event;
  * ‍
  */
 
+import com.fasterxml.jackson.databind.util.ByteBufferBackedInputStream;
 import com.google.common.base.Stopwatch;
 import com.hedera.mirror.domain.ApplicationStatusCode;
+import com.hedera.mirror.domain.StreamItem;
 import com.hedera.mirror.repository.ApplicationStatusRepository;
 import com.hedera.databaseUtilities.DatabaseUtilities;
 import com.hedera.filedelimiters.FileDelimiter;
-import com.hedera.mirror.parser.FileParser;
 import com.hedera.platform.Transaction;
 import com.hedera.utilities.Utility;
 
 import javassist.NotFoundException;
 import lombok.extern.log4j.Log4j2;
 import org.apache.commons.codec.binary.Hex;
-import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.messaging.Message;
+import org.springframework.messaging.MessageHandler;
+import org.springframework.messaging.MessagingException;
 
 import javax.inject.Named;
 import java.io.DataInput;
 import java.io.DataInputStream;
-import java.io.File;
-import java.io.FileInputStream;
 import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -50,12 +50,10 @@ import java.sql.SQLException;
 import java.sql.Types;
 import java.time.Instant;
 import java.util.Arrays;
-import java.util.List;
-import java.util.stream.Collectors;
 
 @Log4j2
 @Named
-public class EventStreamFileParser implements FileParser {
+public class EventStreamFileParser implements MessageHandler {
 
 	private static Connection connect = null;
 	private static final Long PARENT_HASH_NULL = null;
@@ -65,28 +63,18 @@ public class EventStreamFileParser implements FileParser {
 		OK, STOP, ERROR
 	}
 
-	private static final String PARSED_DIR = "/parsedEventStreamFiles/";
 	private final ApplicationStatusRepository applicationStatusRepository;
-	private final EventParserProperties parserProperties;
 
-	public EventStreamFileParser(ApplicationStatusRepository applicationStatusRepository, EventParserProperties parserProperties) {
+	public EventStreamFileParser(ApplicationStatusRepository applicationStatusRepository) {
 		this.applicationStatusRepository = applicationStatusRepository;
-		this.parserProperties = parserProperties;
 	}
 
 	/**
 	 * Given a EventStream file name, read and parse and return as a list of service record pair
-	 *
-	 * @param fileName
-	 * 		the name of record file to read
-	 * @param previousFileHash
-	 * 		previous file hash
-	 * @throws Exception
 	 */
-	private LoadResult loadEventStreamFile(String fileName, String previousFileHash) throws Exception {
-
-		File file = new File(fileName);
+	private boolean loadEventStreamFile(StreamItem streamItem, String previousFileHash) {
 		String readPrevFileHash;
+		final String fileName = streamItem.getFileName();
 		// for >= version3, we need to calculate hash for content;
 		boolean calculateContentHash = false;
 
@@ -104,24 +92,19 @@ public class EventStreamFileParser implements FileParser {
 		// (c[i])
 		MessageDigest mdForContent = null;
 
-		if (file.exists() == false) {
-			log.info("File does not exist {}", fileName);
-			return LoadResult.ERROR;
-		}
-
 		Stopwatch stopwatch = Stopwatch.createStarted();
 
-		try (DataInputStream dis = new DataInputStream(new FileInputStream(file))) {
+		try (DataInputStream dis = new DataInputStream(new ByteBufferBackedInputStream(streamItem.getDataBytes()))) {
 			md = MessageDigest.getInstance(FileDelimiter.HASH_ALGORITHM);
 
 			long counter = 0;
 			int eventStreamFileVersion = dis.readInt();
 			md.update(Utility.integerToBytes(eventStreamFileVersion));
 
-			log.debug("Loading event file {} with version {}", fileName, eventStreamFileVersion);
+			log.debug("Loading event {} with version {}", streamItem, eventStreamFileVersion);
 			if (eventStreamFileVersion < FileDelimiter.EVENT_STREAM_FILE_VERSION_LEGACY) {
 				log.error("EventStream file format version doesn't match.");
-				return LoadResult.ERROR;
+				return false;
 			} else if (eventStreamFileVersion >= FileDelimiter.EVENT_STREAM_FILE_VERSION_CURRENT) {
 				mdForContent = MessageDigest.getInstance(FileDelimiter.HASH_ALGORITHM);
 				calculateContentHash = true;
@@ -143,10 +126,11 @@ public class EventStreamFileParser implements FileParser {
 
 						if (!Arrays.equals(new byte[48], readPrevFileHashBytes) && !readPrevFileHash.contentEquals(
 								previousFileHash)) {
-							if (applicationStatusRepository.findByStatusCode(ApplicationStatusCode.EVENT_HASH_MISMATCH_BYPASS_UNTIL_AFTER).compareTo(fileName) < 0) {
+							if (applicationStatusRepository.findByStatusCode(
+							        ApplicationStatusCode.EVENT_HASH_MISMATCH_BYPASS_UNTIL_AFTER).compareTo(fileName) < 0) {
 								// last file for which mismatch is allowed is in the past
 								log.error("Hash mismatch for file {}. Previous = {}, Current = {}", fileName, previousFileHash, readPrevFileHash);
-								return LoadResult.STOP;
+								return false;
 							}
 						}
 						break;
@@ -155,12 +139,12 @@ public class EventStreamFileParser implements FileParser {
 						if (calculateContentHash) {
 							mdForContent.update(typeDelimiter);
 							if (!loadEvent(dis, mdForContent, true)) {
-								return LoadResult.STOP;
+							    return false;
 							}
 						} else {
 							md.update(typeDelimiter);
 							if (!loadEvent(dis, md, true)) {
-								return LoadResult.STOP;
+							    return false;
 							}
 						}
 						counter++;
@@ -169,24 +153,24 @@ public class EventStreamFileParser implements FileParser {
 						if (calculateContentHash) {
 							mdForContent.update(typeDelimiter);
 							if (!loadEvent(dis, mdForContent, false)) {
-								return LoadResult.STOP;
+							    return false;
 							}
 						} else {
 							md.update(typeDelimiter);
 							if (!loadEvent(dis, md, false)) {
-								return LoadResult.STOP;
+							    return false;
 							}
 						}
 						counter++;
 						break;
 					default:
-						log.error("Unknown record file delimiter {} for file", typeDelimiter, file);
+						log.error("Unknown record file delimiter {} for file {}", typeDelimiter, fileName);
 				}
 			}
 			log.info("Loaded {} events successfully from {} in {}", counter, fileName, stopwatch);
 		} catch (Exception e) {
 			log.error("Error parsing event file {} after {}", fileName, stopwatch, e);
-			return LoadResult.ERROR;
+			return false;
 		}
 
 		if (calculateContentHash) {
@@ -197,7 +181,7 @@ public class EventStreamFileParser implements FileParser {
 		if (!Utility.hashIsEmpty(thisFileHash)) {
 			applicationStatusRepository.updateStatusValue(ApplicationStatusCode.LAST_PROCESSED_EVENT_HASH, thisFileHash);
 		}
-		return LoadResult.OK;
+		return true;
 	}
 
 	private boolean loadEvent(DataInputStream dis, MessageDigest md, boolean noTxs) throws IOException {
@@ -437,30 +421,6 @@ public class EventStreamFileParser implements FileParser {
 		return data;
 	}
 
-	/**
-	 * read and parse a list of EventStream files
-	 * @throws Exception
-	 */
-	private boolean loadEventStreamFiles(List<String> fileNames) throws Exception {
-
-		String prevFileHash = applicationStatusRepository.findByStatusCode(ApplicationStatusCode.LAST_PROCESSED_EVENT_HASH);
-		for (String name : fileNames) {
-			if (Utility.checkStopFile()) {
-				log.info("Stop file found, stopping");
-				return false;
-			}
-			LoadResult loadResult = loadEventStreamFile(name, prevFileHash);
-			if (loadResult == LoadResult.STOP) {
-				return false;
-			}
-			prevFileHash = applicationStatusRepository.findByStatusCode(ApplicationStatusCode.LAST_PROCESSED_EVENT_HASH);
-			if (loadResult == LoadResult.OK) {
-				Utility.moveFileToParsedDir(name, PARSED_DIR);
-			}
-		}
-		return true;
-	}
-
     /**
      * Given a eventStream file data, read its prevFileHash
      * @return return previous file hash's Hex String
@@ -490,56 +450,24 @@ public class EventStreamFileParser implements FileParser {
         }
     }
 
-	@Override
-	@Scheduled(fixedRateString = "${hedera.mirror.parser.event.frequency:60000}")
-	public void parse() {
+    @Override
+    public void handleMessage(Message<?> message) throws MessagingException {
+        StreamItem streamItem = (StreamItem)message.getPayload();
+        log.debug("Processing {}", streamItem);
 		try {
-			if (!parserProperties.isEnabled()) {
-				return;
-			}
-
-			if (Utility.checkStopFile()) {
-				log.info("Stop file found");
-				return;
-			}
-
-            Path path = parserProperties.getValidPath();
-			log.info("Parsing event files from {}", path);
-			File file = path.toFile();
+		    // TODO: don't process any more messages if a message fails.
 			connect = DatabaseUtilities.openDatabase(connect);
-
-			boolean result = true;
-			if (file.isFile()) {
-				log.info("Loading event file {}", path);
-				if (loadEventStreamFile(path.toString(), applicationStatusRepository.findByStatusCode(ApplicationStatusCode.LAST_PROCESSED_EVENT_HASH)) == LoadResult.STOP) {
-					result = false;
-				}
-			} else if (file.isDirectory()) { //if it's a directory
-
-				String[] files = file.list(); // get all files under the directory
-				Arrays.sort(files);           // sorted by name (timestamp)
-
-				// add director prefix to get full path
-				List<String> fullPaths = Arrays.asList(files).stream()
-						.filter(f -> Utility.isEventStreamFile(f))
-						.map(s -> file + "/" + s)
-						.collect(Collectors.toList());
-
-				log.info("Loading {} event files from directory {}", fullPaths.size(), path);
-
-				log.trace("Event files: {}", fullPaths);
-				result = loadEventStreamFiles(fullPaths);
-			} else {
-				log.error("Event file {} does not exist", path);
-			}
-
+            // TODO(followup): delete prevFileHash check in parser. It's already done in downloader and StreamItems are
+            // sent in-sequence to parser.
+            String prevFileHash = applicationStatusRepository.findByStatusCode(ApplicationStatusCode.LAST_PROCESSED_EVENT_HASH);
+            loadEventStreamFile(streamItem, prevFileHash);
 			try {
 				connect = DatabaseUtilities.closeDatabase(connect);
 			} catch (SQLException e) {
 				log.error("Error closing database connection", e);
 			}
 		} catch (Exception e) {
-			log.error("Error parsing record files", e);
+			log.error("Error parsing {}", streamItem, e);
 		}
 	}
 }

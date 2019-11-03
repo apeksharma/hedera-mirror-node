@@ -143,55 +143,12 @@ public class Utility {
         }
     }
 
-	/**
-	 * Calculate SHA384 hash of a binary file
-	 *
-	 * @param fileName
-	 * 		file name
-	 * @return byte array of hash value of null if calculating has failed
-	 */
-	public static byte[] getFileHash(String fileName) {
-		MessageDigest md;
-		if (getFileExtension(fileName).contentEquals("rcd")) {
-			return getRecordFileHash(fileName);
-		} else if (getFileExtension(fileName).contentEquals("evt")) {
-			return getEventFileHash(fileName);
-		} else {
-			try {
-				md = MessageDigest.getInstance(FileDelimiter.HASH_ALGORITHM);
-
-				byte[] array = Files.readAllBytes(Paths.get(fileName));
-				return md.digest(array);
-
-			} catch (NoSuchAlgorithmException | IOException e) {
-				log.error("Exception {}", e);
-				return null;
-			}
-		}
-	}
-
-	/**
-	 * Calculate SHA384 hash of an event file
-	 * @param filename
-	 * 		file name
-	 * @return byte array of hash value of null if calculating has failed
-	 */
-	private static byte[] getEventFileHash(String filename) {
-        try {
-            return getEventInputStreamHash(new FileInputStream(new File(filename)), filename);
-        } catch (Exception e) {
-            log.error("Exception ", e);
-            return null;
-        }
-    }
-
+    /**
+     * Calculate SHA384 hash of event file data
+     * @return byte array of hash value of null if calculating has failed
+     */
     private static byte[] getEventStreamItemHash(StreamItem streamItem) {
-        return getEventInputStreamHash(
-                new ByteBufferBackedInputStream(streamItem.getDataBytes()), streamItem.getFileName());
-    }
-
-
-    private static byte[] getEventInputStreamHash(InputStream inputStream, String filename) {
+        String filename = streamItem.getFileName();
 		// MessageDigest for getting the file Hash
 		// suppose file[i] = p[i] || h[i] || c[i];
 		// p[i] denotes the bytes before previousFileHash;
@@ -206,7 +163,7 @@ public class Utility {
 
         // for >= version3, we need to calculate hash for content;
         boolean calculateContentHash = false;
-		try (DataInputStream dis = new DataInputStream(inputStream)) {
+		try (DataInputStream dis = new DataInputStream(new ByteBufferBackedInputStream(streamItem.getDataBytes()))) {
 			MessageDigest md;
 			MessageDigest mdForContent = null;
 
@@ -267,30 +224,14 @@ public class Utility {
 	}
 
     /**
-     * Calculate SHA384 hash of an event file
-     * @param filename
-     * 		file name
+     * Calculate SHA384 hash of an record file data
      * @return byte array of hash value of null if calculating has failed
      */
-    private static byte[] getRecordFileHash(String filename) {
-        try {
-            return getRecordInputStreamHash(new FileInputStream(new File(filename)), filename);
-        } catch (Exception e) {
-            log.error("Exception ", e);
-            return null;
-        }
-    }
-
     private static byte[] getRecordStreamItemHash(StreamItem streamItem) {
-        return getRecordInputStreamHash(
-                new ByteBufferBackedInputStream(streamItem.getDataBytes()), streamItem.getFileName());
-    }
-
-
-    private static byte[] getRecordInputStreamHash(InputStream inputStream, String filename) {
+        String filename = streamItem.getFileName();
 		byte[] readFileHash = new byte[48];
 
-		try (DataInputStream dis = new DataInputStream(inputStream)) {
+		try (DataInputStream dis = new DataInputStream(new ByteBufferBackedInputStream(streamItem.getDataBytes()))) {
 			MessageDigest md = MessageDigest.getInstance(FileDelimiter.HASH_ALGORITHM);
 			MessageDigest mdForContent = MessageDigest.getInstance(FileDelimiter.HASH_ALGORITHM);
 

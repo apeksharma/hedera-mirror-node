@@ -32,6 +32,7 @@ import java.util.regex.Pattern;
 
 @Log4j2
 public final class AccountBalancesFileInfo {
+    // TODO: move this to streamItem?
     public static final Pattern FILENAME_PATTERN = Pattern.compile(
             "^(?<year>[0-9]{4})-(?<month>[0-9]{1,2})-(?<day>[0-9]{1,2})T(?<hour>[0-9]{1,2})_(?<minute>[0-9]{1,2})_(?<second>[0-9]{2})(\\.(?<subsecond>[0-9]{1,9}))?.*_balances\\.csv$",
             Pattern.CASE_INSENSITIVE);
@@ -47,21 +48,19 @@ public final class AccountBalancesFileInfo {
     /**
      * Given a path to an account balances file - validate that the filename matches the expected pattern and extract
      * the timestamp from the filename.
-     * @param filePath
      * @throws IllegalArgumentException if the filename doesn't match the expected pattern
      */
-    public AccountBalancesFileInfo(final Path filePath) throws IllegalArgumentException {
-        final var fn = filePath.getFileName().toString();
-        final Matcher m = FILENAME_PATTERN.matcher(fn);
+    public AccountBalancesFileInfo(String fileName) throws IllegalArgumentException {
+        final Matcher m = FILENAME_PATTERN.matcher(fileName);
         if (!m.find()) {
             throw new IllegalArgumentException(String.format(
-                    "Invalid date in account balance filename %s", fn));
+                    "Invalid date in account balance filename %s", fileName));
         }
         try {
             filenameTimestamp = timestampConverter.toInstant(m);
         } catch (IllegalArgumentException e) {
             throw new IllegalArgumentException(String.format(
-                    "Invalid date in account balance filename %s", fn), e);
+                    "Invalid date in account balance filename %s", fileName), e);
         }
     }
 }

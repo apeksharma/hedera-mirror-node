@@ -45,7 +45,7 @@ public class BalanceParserProperties implements ParserProperties {
     private boolean enabled = true;
 
     @Min(1)
-    private int fileBufferSize = 200_000;
+    private int fileBufferSize = 200_000;  // todo: remove?
 
     public Path getStreamPath() {
         return mirrorProperties.getDataPath().resolve(getStreamType().getPath());
