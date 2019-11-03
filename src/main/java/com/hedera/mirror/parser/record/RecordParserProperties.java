@@ -40,8 +40,6 @@ public class RecordParserProperties implements ParserProperties {
 
     private final MirrorProperties mirrorProperties;
 
-    private boolean enabled = true;
-
     @NotNull
     private Duration frequency = Duration.ofMillis(500L);
 
@@ -54,10 +52,6 @@ public class RecordParserProperties implements ParserProperties {
     private boolean persistFiles = true;
 
     private boolean persistSystemFiles = true;
-
-    public Path getStreamPath() {
-        return mirrorProperties.getDataPath().resolve(getStreamType().getPath());
-    }
 
     @Override
     public StreamType getStreamType() {

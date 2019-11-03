@@ -20,8 +20,6 @@ package com.hedera.mirror.parser.balance;
  * ‍
  */
 
-import com.hedera.mirror.parser.balance.AccountBalancesDatasetV2;
-
 import org.junit.jupiter.api.Test;
 import org.springframework.core.io.ClassPathResource;
 

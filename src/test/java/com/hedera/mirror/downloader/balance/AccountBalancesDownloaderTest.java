@@ -20,6 +20,8 @@ package com.hedera.mirror.downloader.balance;
  * ‍
  */
 
+import com.fasterxml.jackson.databind.util.ByteBufferBackedInputStream;
+
 import com.hedera.FileCopier;
 import com.hedera.mirror.addressbook.NetworkAddressBook;
 import com.hedera.mirror.MirrorProperties;
@@ -30,6 +32,7 @@ import com.hedera.mirror.domain.StreamType;
 import com.hedera.mirror.downloader.CommonDownloaderProperties;
 import com.hedera.mirror.repository.ApplicationStatusRepository;
 import com.hedera.utilities.Utility;
+
 import io.findify.s3mock.S3Mock;
 import org.apache.commons.io.FileUtils;
 import org.junit.jupiter.api.*;

@@ -54,9 +54,9 @@ public abstract class IntegrationTest {
         @Override
         public void initialize(ConfigurableApplicationContext applicationContext) {
             try {
-                log.info("Starting PostgreSQL");
-                postgresql = new PostgreSQLContainer<>("postgres:9.6-alpine");
-                postgresql.start();
+//                log.info("Starting PostgreSQL");
+//                postgresql = new PostgreSQLContainer<>("postgres:9.6-alpine");
+//                postgresql.start();
 
                 TestPropertyValues
                         .of("hedera.mirror.db.name=" + postgresql.getDatabaseName())

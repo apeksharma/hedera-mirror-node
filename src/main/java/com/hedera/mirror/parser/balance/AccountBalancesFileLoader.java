@@ -64,7 +64,7 @@ public final class AccountBalancesFileLoader implements AutoCloseable {
 		this.systemShardNum = balanceProperties.getMirrorProperties().getShard();
 		final var info = new AccountBalancesFileInfo(fileName);
 		filenameTimestamp = info.getFilenameTimestamp();
-		BufferedReader reader = new BufferedReader(new InputStreamReader(new ByteBufferBackedInputStream(streamItem.getDataBytes())));
+		BufferedReader reader = new BufferedReader(new InputStreamReader(new ByteBufferBackedInputStream(streamItem.getDataBytes().rewind())));
 		dataset = new AccountBalancesDatasetV2(streamItem.getFileName(), reader);
 		insertBatchSize = balanceProperties.getBatchSize();
 	}

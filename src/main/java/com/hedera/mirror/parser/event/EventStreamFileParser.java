@@ -94,7 +94,7 @@ public class EventStreamFileParser implements MessageHandler {
 
 		Stopwatch stopwatch = Stopwatch.createStarted();
 
-		try (DataInputStream dis = new DataInputStream(new ByteBufferBackedInputStream(streamItem.getDataBytes()))) {
+		try (DataInputStream dis = new DataInputStream(new ByteBufferBackedInputStream(streamItem.getDataBytes().rewind()))) {
 			md = MessageDigest.getInstance(FileDelimiter.HASH_ALGORITHM);
 
 			long counter = 0;
@@ -181,7 +181,8 @@ public class EventStreamFileParser implements MessageHandler {
 		if (!Utility.hashIsEmpty(thisFileHash)) {
 			applicationStatusRepository.updateStatusValue(ApplicationStatusCode.LAST_PROCESSED_EVENT_HASH, thisFileHash);
 		}
-		return true;
+        applicationStatusRepository.updateStatusValue(ApplicationStatusCode.LAST_PROCESSED_EVENT_FILENAME, fileName);
+        return true;
 	}
 
 	private boolean loadEvent(DataInputStream dis, MessageDigest md, boolean noTxs) throws IOException {

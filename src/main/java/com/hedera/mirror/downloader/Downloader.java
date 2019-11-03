@@ -309,7 +309,7 @@ public abstract class Downloader {
         String bypassMismatch = applicationStatusRepository.findByStatusCode(getBypassHashKey());
         String prevFileHash;
         try {
-            prevFileHash = getPrevFileHash(streamItem.getDataBytes());
+            prevFileHash = getPrevFileHash(streamItem.getDataBytes().rewind());
         } catch(NotFoundException e) {
             log.warn("{} does not contain valid previous file hash", streamItem, e);
             return false;

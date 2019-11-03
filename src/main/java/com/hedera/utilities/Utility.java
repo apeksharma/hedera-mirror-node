@@ -89,7 +89,7 @@ public class Utility {
 	public static Pair<byte[], byte[]> extractHashAndSig(StreamItem streamItem) {
 		byte[] sig = null;
 
-		try (DataInputStream dis = new DataInputStream(new ByteBufferBackedInputStream(streamItem.getDataBytes()))) {
+		try (DataInputStream dis = new DataInputStream(new ByteBufferBackedInputStream(streamItem.getDataBytes().rewind()))) {
 			byte[] fileHash = new byte[48];
 
 			while (dis.available() != 0) {
@@ -133,7 +133,7 @@ public class Utility {
         } else {
             try {
                 md = MessageDigest.getInstance(FileDelimiter.HASH_ALGORITHM);
-                md.update(streamItem.getDataBytes());
+                md.update(streamItem.getDataBytes().rewind());
                 return md.digest();
 
             } catch (NoSuchAlgorithmException e) {
@@ -163,7 +163,7 @@ public class Utility {
 
         // for >= version3, we need to calculate hash for content;
         boolean calculateContentHash = false;
-		try (DataInputStream dis = new DataInputStream(new ByteBufferBackedInputStream(streamItem.getDataBytes()))) {
+		try (DataInputStream dis = new DataInputStream(new ByteBufferBackedInputStream(streamItem.getDataBytes().rewind()))) {
 			MessageDigest md;
 			MessageDigest mdForContent = null;
 
@@ -231,7 +231,7 @@ public class Utility {
         String filename = streamItem.getFileName();
 		byte[] readFileHash = new byte[48];
 
-		try (DataInputStream dis = new DataInputStream(new ByteBufferBackedInputStream(streamItem.getDataBytes()))) {
+		try (DataInputStream dis = new DataInputStream(new ByteBufferBackedInputStream(streamItem.getDataBytes().rewind()))) {
 			MessageDigest md = MessageDigest.getInstance(FileDelimiter.HASH_ALGORITHM);
 			MessageDigest mdForContent = MessageDigest.getInstance(FileDelimiter.HASH_ALGORITHM);
 

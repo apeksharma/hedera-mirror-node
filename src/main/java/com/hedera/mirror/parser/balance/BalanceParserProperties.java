@@ -42,14 +42,9 @@ public class BalanceParserProperties implements ParserProperties {
     @Min(1)
     private int batchSize = 2000;
 
-    private boolean enabled = true;
-
     @Min(1)
     private int fileBufferSize = 200_000;  // todo: remove?
 
-    public Path getStreamPath() {
-        return mirrorProperties.getDataPath().resolve(getStreamType().getPath());
-    }
     @Override
     public StreamType getStreamType() {
         return StreamType.BALANCE;

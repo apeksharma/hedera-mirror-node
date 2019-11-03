@@ -40,14 +40,8 @@ public class EventParserProperties implements ParserProperties {
 
     private final MirrorProperties mirrorProperties;
 
-    private boolean enabled = false;
-
     @NotNull
     private Duration frequency = Duration.ofMinutes(1L);
-
-    public Path getStreamPath() {
-        return mirrorProperties.getDataPath().resolve(getStreamType().getPath());
-    }
 
     @Override
     public StreamType getStreamType() {

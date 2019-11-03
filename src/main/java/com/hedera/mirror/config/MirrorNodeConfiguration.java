@@ -77,7 +77,7 @@ public class MirrorNodeConfiguration {
     @Bean
     public IntegrationFlow recordsFlow() {
         return IntegrationFlows.from("verifiedRecordStreamItemChannel")
-                .handle("RecordFileParser")
+                .handle("RecordFileParser", "handleMessage")
                 .get();
     }
 
@@ -89,7 +89,7 @@ public class MirrorNodeConfiguration {
     @Bean
     public IntegrationFlow eventsFlow() {
         return IntegrationFlows.from("verifiedEventStreamItemChannel")
-                .handle("EventStreamFileParser")
+                .handle("EventStreamFileParser", "handleMessage")
                 .get();
     }
 
@@ -101,7 +101,7 @@ public class MirrorNodeConfiguration {
     @Bean
     public IntegrationFlow balanceFlow() {
         return IntegrationFlows.from("verifiedBalanceStreamItemChannel")
-                .handle("BalanceFileParser")
+                .handle("BalanceFileParser", "handleMessage")
                 .get();
     }
 

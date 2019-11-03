@@ -27,24 +27,5 @@ import javax.annotation.PostConstruct;
 import java.nio.file.Path;
 
 public interface ParserProperties {
-
-    Path getStreamPath();
-
     StreamType getStreamType();
-
-    default Path getParsedPath() {
-        return getStreamPath().resolve(getStreamType().getParsed());
-    }
-
-    default Path getValidPath() {
-        return getStreamPath().resolve(getStreamType().getValid());
-    }
-
-    boolean isEnabled();  // todo: delete?
-
-    @PostConstruct
-    default void init() {
-        Utility.ensureDirectory(getParsedPath());
-        Utility.ensureDirectory(getValidPath());
-    }
 }
