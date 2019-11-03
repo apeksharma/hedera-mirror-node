@@ -25,16 +25,20 @@ import com.google.common.base.Stopwatch;
 import com.hedera.mirror.addressbook.NetworkAddressBook;
 import com.hedera.mirror.domain.ApplicationStatusCode;
 import com.hedera.mirror.domain.NodeAddress;
+import com.hedera.mirror.domain.StreamItem;
 import com.hedera.mirror.repository.ApplicationStatusRepository;
 import com.hedera.utilities.Utility;
 
+import javassist.NotFoundException;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.tuple.Pair;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import software.amazon.awssdk.core.ResponseBytes;
 import software.amazon.awssdk.core.async.AsyncResponseTransformer;
 import software.amazon.awssdk.services.s3.S3AsyncClient;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
+import software.amazon.awssdk.services.s3.model.GetObjectResponse;
 import software.amazon.awssdk.services.s3.model.ListObjectsV2Request;
 import software.amazon.awssdk.services.s3.model.ListObjectsV2Response;
 import software.amazon.awssdk.services.s3.model.S3Object;
@@ -43,6 +47,7 @@ import static java.nio.file.StandardCopyOption.REPLACE_EXISTING;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.ByteBuffer;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -107,14 +112,14 @@ public abstract class Downloader {
      *      key: sig file name
      *      value: a list of sig files with the same name and from different nodes folder;
      */
-	private Map<String, List<File>> downloadSigFiles() throws InterruptedException {
+	private Map<String, List<StreamItem>> downloadSigFiles() throws InterruptedException {
 		String s3Prefix = downloaderProperties.getPrefix();
 		String lastValidFileName = applicationStatusRepository.findByStatusCode(getLastValidDownloadedFileKey());
         // foo.rcd < foo.rcd_sig. If we read foo.rcd from application stats, we have to start listing from
         // next to 'foo.rcd_sig'.
         String lastValidSigFileName = lastValidFileName.isEmpty() ? "" : lastValidFileName + "_sig";
 
-		final var sigFilesMap = new ConcurrentHashMap<String, List<File>>();
+		final var sigFilesMap = new ConcurrentHashMap<String, List<StreamItem>>();
 
 		// refresh node account ids
 		nodeAccountIds = networkAddressBook.load().stream().map(NodeAddress::getId).collect(Collectors.toList());
@@ -147,9 +152,10 @@ public abstract class Downloader {
                     for (S3Object content : response.get().contents()) {
                         String s3ObjectKey = content.key();
                         if (s3ObjectKey.endsWith("_sig")) {
-                            Path saveTarget = downloaderProperties.getStreamPath().getParent().resolve(s3ObjectKey);
-                            Utility.ensureDirectory(saveTarget.getParent());
-                            pendingDownloads.add(saveToLocalAsync(s3ObjectKey, saveTarget));
+                            String fileName = s3ObjectKey.substring(s3ObjectKey.lastIndexOf("/") + 1);
+                            StreamItem item = new StreamItem(StreamItem.Type.SIG, fileName, nodeAccountId,
+                                    downloaderProperties.getStreamType());
+                            pendingDownloads.add(downloadStreamItem(s3ObjectKey, item));
                             totalDownloads.incrementAndGet();
                         }
                     }
@@ -165,11 +171,9 @@ public abstract class Downloader {
 						try {
 							if (pd.waitForCompletion()) {
 								ref.count++;
-								File sigFile = pd.getFile();
-								String fileName = sigFile.getName();
+								String fileName = pd.getStreamItem().getFileName();
 								sigFilesMap.putIfAbsent(fileName, Collections.synchronizedList(new ArrayList<>()));
-								List<File> files = sigFilesMap.get(fileName);
-								files.add(sigFile);
+								sigFilesMap.get(fileName).add(pd.getStreamItem());
 							}
 						} catch (InterruptedException ex) {
 							log.error("Failed downloading {} in {}", pd.getS3key(), pd.getStopwatch(), ex);
@@ -198,23 +202,12 @@ public abstract class Downloader {
 	/**
 	 * Returns a PendingDownload for which the caller can waitForCompletion() to wait for the download to complete.
 	 * This either queues or begins the download (depending on the AWS TransferManager).
-	 * @param s3ObjectKey
-	 * @param localFile
-	 * @return
 	 */
-    private PendingDownload saveToLocalAsync(String s3ObjectKey, Path localFile) {
-        File file = localFile.toFile();
-        // If process stops abruptly and is restarted, it's possible we try to re-download some of the files which
-        // already exist on disk because lastValidFileName wasn't updated. AsyncFileResponseTransformer throws
-        // exceptions if a file already exists, rather then silently overwrite it. So following check and short-circuit
-        // are to avoid log spam of java.nio.file.FileAlreadyExistsException, not for optimization purpose.
-        if (file.exists()) {
-            return new PendingDownload(CompletableFuture.completedFuture(null), file, s3ObjectKey);
-        }
-        var future = s3Client.getObject(
+    private PendingDownload downloadStreamItem(String s3ObjectKey, StreamItem streamItem) {
+        CompletableFuture<ResponseBytes<GetObjectResponse>> future = s3Client.getObject(
                 GetObjectRequest.builder().bucket(downloaderProperties.getCommon().getBucketName()).key(s3ObjectKey).build(),
-                AsyncResponseTransformer.toFile(file));
-        return new PendingDownload(future, file, s3ObjectKey);
+                AsyncResponseTransformer.toBytes());
+        return new PendingDownload(future, s3ObjectKey, streamItem);
     }
 
 	/**
@@ -250,7 +243,7 @@ public abstract class Downloader {
      *  Hash until find a match one
      * @param sigFilesMap
      */
-    private void verifySigsAndDownloadDataFiles(Map<String, List<File>> sigFilesMap) {
+    private void verifySigsAndDownloadDataFiles(Map<String, List<StreamItem>> sigFilesMap) {
         // reload address book and keys in case it has been updated by RecordFileLogger
         NodeSignatureVerifier verifier = new NodeSignatureVerifier(networkAddressBook);
         Path validPath = downloaderProperties.getValidPath();
@@ -267,7 +260,7 @@ public abstract class Downloader {
                 return;
             }
 
-            List<File> sigFiles = sigFilesMap.get(sigFileName);
+            List<StreamItem> sigFiles = sigFilesMap.get(sigFileName);
             boolean valid = false;
 
             // If the number of sigFiles is not greater than 2/3 of number of nodes, we don't need to verify them
@@ -277,9 +270,9 @@ public abstract class Downloader {
             }
 
             // validSigFiles are signed by node'key and contains the same Hash which has been agreed by more than 2/3 nodes
-            Pair<byte[], List<File>> hashAndValidSigFiles = verifier.verifySignatureFiles(sigFiles);
+            Pair<byte[], List<StreamItem>> hashAndValidSigFiles = verifier.verifySignatureFiles(sigFiles);
             final byte[] validHash = hashAndValidSigFiles.getLeft();
-            for (File validSigFileName : hashAndValidSigFiles.getRight()) {
+            for (StreamItem validSigStreamItem : hashAndValidSigFiles.getRight()) {
                 if (Utility.checkStopFile()) {
                     log.info("Stop file found, stopping");
                     return;
@@ -287,17 +280,17 @@ public abstract class Downloader {
                 log.debug("Verified signature file matches at least 2/3 of nodes: {}", sigFileName);
 
                 try {
-                    File signedDataFile = downloadSignedDataFile(validSigFileName);
-                    if (signedDataFile != null && Utility.hashMatch(validHash, signedDataFile)) {
-                        log.debug("Downloaded data file {} corresponding to verified hash", signedDataFile.getName());
+                    StreamItem signedDataStreamItem = downloadSignedDataFile(validSigStreamItem);
+                    if (signedDataStreamItem != null && Utility.hashMatch(validHash, signedDataStreamItem)) {
+                        log.debug("Downloaded data file {} corresponding to verified hash", signedDataStreamItem.getFileName());
                         // Check that file is newer than last valid downloaded file.
                         // Additionally, if the file type uses prevFileHash based linking, verify that new file is next in
                         // the sequence.
-                        if (verifyHashChain(signedDataFile)) {
+                        if (verifyHashChain(signedDataStreamItem)) {
                             // move the file to the valid directory
-                            File destination = validPath.resolve(signedDataFile.getName()).toFile();
-                            if (moveFile(signedDataFile, destination)) {
-                                log.debug("Successfully moved file from {} to {}", signedDataFile, destination);
+                            File destination = validPath.resolve(signedDataStreamItem.getName()).toFile();
+                            if (moveFile(signedDataStreamItem, destination)) {
+                                log.debug("Successfully moved file from {} to {}", signedDataStreamItem, destination);
                                 if (getLastValidDownloadedFileHashKey() != null) {
                                     applicationStatusRepository.updateStatusValue(getLastValidDownloadedFileHashKey(),
                                             Utility.bytesToHex(validHash));
@@ -308,9 +301,9 @@ public abstract class Downloader {
                                 break;
                             }
                         }
-                    } else if (signedDataFile != null) {
+                    } else if (signedDataStreamItem != null) {
                         log.warn("Hash doesn't match the hash contained in valid signature file. Will try to download" +
-                                " a file with same timestamp from other nodes and check the Hash: {}", signedDataFile);
+                                " a file with same timestamp from other nodes and check the Hash: {}", signedDataStreamItem);
                     }
                 } catch (Exception e) {
                     log.error("Error downloading data file corresponding to {}", sigFileName, e);
@@ -325,46 +318,46 @@ public abstract class Downloader {
 
     /**
      * Verifies that prevFileHash in given {@code file} matches that in application repository.
-     * @throws Exception
      */
-    protected boolean verifyHashChain(File file) {
-        String filePath = file.getAbsolutePath();
+    protected boolean verifyHashChain(StreamItem streamItem) {
         String lastValidFileHash = applicationStatusRepository.findByStatusCode(getLastValidDownloadedFileHashKey());
         String bypassMismatch = applicationStatusRepository.findByStatusCode(getBypassHashKey());
-        String prevFileHash = getPrevFileHash(filePath);
-
-        if (prevFileHash == null) {
-            log.warn("Doesn't contain valid previous file hash: {}", filePath);
+        String prevFileHash;
+        try {
+            prevFileHash = getPrevFileHash(streamItem.getDataBytes());
+        } catch(NotFoundException e) {
+            log.warn("{} does not contain valid previous file hash", streamItem, e);
             return false;
         }
 
         if (StringUtils.isBlank(lastValidFileHash) || lastValidFileHash.equals(prevFileHash) ||
-                Utility.hashIsEmpty(prevFileHash) || bypassMismatch.compareTo(file.getName()) > 0) {
+                Utility.hashIsEmpty(prevFileHash) || bypassMismatch.compareTo(streamItem.getFileName()) > 0) {
             return true;
         }
 
-        log.warn("File Hash Mismatch with previous: {}, expected {}, got {}", file.getName(), lastValidFileHash, prevFileHash);
+        log.warn("File Hash Mismatch with previous: {}, expected {}, got {}",
+                streamItem.getFileName(), lastValidFileHash, prevFileHash);
         return false;
     }
 
-    private File downloadSignedDataFile(File sigFile) {
-        String fileName = sigFile.getName().replace("_sig", "");
+    private StreamItem downloadSignedDataFile(StreamItem sigStreamItem) {
+        String fileName = sigStreamItem.getFileName().replace("_sig", "");
         String s3Prefix = downloaderProperties.getPrefix();
 
-		String nodeAccountId = Utility.getAccountIDStringFromFilePath(sigFile.getPath());
-		String s3ObjectKey = s3Prefix + nodeAccountId + "/" + fileName;
+		String s3ObjectKey = s3Prefix + sigStreamItem.getNodeAccountId() + "/" + fileName;
 
-		Path localFile = downloaderProperties.getTempPath().resolve(fileName);
+        StreamItem dataStreamItem = new StreamItem(StreamItem.Type.PAYLOAD, fileName, sigStreamItem.getNodeAccountId(),
+                sigStreamItem.getStreamType());
 		try {
-			var pendingDownload = saveToLocalAsync(s3ObjectKey, localFile);
+			var pendingDownload = downloadStreamItem(s3ObjectKey, dataStreamItem);
 			pendingDownload.waitForCompletion();
 			if (pendingDownload.isDownloadSuccessful()) {
-			    return pendingDownload.getFile();
+			    return pendingDownload.getStreamItem();
             } else {
-                log.error("Failed downloading {} from node {}", s3ObjectKey, nodeAccountId);
+                log.error("Failed downloading {}", dataStreamItem);
             }
 		} catch (Exception ex) {
-            log.error("Failed downloading {} from node {}", s3ObjectKey, nodeAccountId, ex);
+            log.error("Failed downloading {}", dataStreamItem, ex);
 		}
         return null;
     }
@@ -372,5 +365,5 @@ public abstract class Downloader {
     protected abstract ApplicationStatusCode getLastValidDownloadedFileKey();
     protected abstract ApplicationStatusCode getLastValidDownloadedFileHashKey();
     protected abstract ApplicationStatusCode getBypassHashKey();
-    protected abstract String getPrevFileHash(String filePath);
+    protected abstract String getPrevFileHash(ByteBuffer data) throws NotFoundException;
 }

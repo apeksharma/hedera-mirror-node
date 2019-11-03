@@ -22,15 +22,18 @@ package com.hedera.mirror.downloader.balance;
 
 import com.hedera.mirror.addressbook.NetworkAddressBook;
 import com.hedera.mirror.domain.ApplicationStatusCode;
+import com.hedera.mirror.domain.StreamItem;
 import com.hedera.mirror.downloader.Downloader;
 import com.hedera.mirror.repository.ApplicationStatusRepository;
+
+import javassist.NotFoundException;
 import lombok.extern.log4j.Log4j2;
 
 import org.springframework.scheduling.annotation.Scheduled;
 import software.amazon.awssdk.services.s3.S3AsyncClient;
 
 import javax.inject.Named;
-import java.io.File;
+import java.nio.ByteBuffer;
 
 @Log4j2
 @Named
@@ -48,7 +51,7 @@ public class AccountBalancesDownloader extends Downloader {
     }
 
     @Override
-    protected boolean verifyHashChain(File file) {
+    protected boolean verifyHashChain(StreamItem streamItem) {
         return true;
     }
 
@@ -64,7 +67,7 @@ public class AccountBalancesDownloader extends Downloader {
         return null;
     }
 
-    protected String getPrevFileHash(String filePath) {
+    protected String getPrevFileHash(ByteBuffer data) throws NotFoundException {
         return null;
     }
 }

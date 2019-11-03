@@ -23,15 +23,18 @@ package com.hedera.mirror.parser.record;
 import java.io.DataInputStream;
 import java.io.File;
 import java.io.FileInputStream;
+import java.nio.ByteBuffer;
 import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.NoSuchElementException;
 import java.util.stream.Collectors;
 
 import com.google.common.base.Stopwatch;
 import com.google.protobuf.TextFormat;
 import com.hedera.mirror.domain.ApplicationStatusCode;
+import com.hedera.mirror.domain.StreamItem;
 import com.hedera.mirror.repository.ApplicationStatusRepository;
 import com.hedera.filedelimiters.FileDelimiter;
 import com.hedera.mirror.parser.FileParser;
@@ -40,8 +43,10 @@ import com.hedera.recordFileLogger.RecordFileLogger.INIT_RESULT;
 import com.hedera.utilities.Utility;
 import com.hederahashgraph.api.proto.java.Transaction;
 import com.hederahashgraph.api.proto.java.TransactionRecord;
+import javassist.NotFoundException;
 import lombok.extern.log4j.Log4j2;
 import org.apache.commons.codec.binary.Hex;
+import org.aspectj.weaver.ast.Not;
 import org.springframework.scheduling.annotation.Scheduled;
 
 import javax.inject.Named;
@@ -254,40 +259,30 @@ public class RecordFileParser implements FileParser {
 		}
 	}
 
-	/**
-	 * Given a service record name, read its prevFileHash
-	 *
-	 * @param fileName
-	 * 		the name of record file to read
-	 * @return return previous file hash's Hex String
-	 */
-	public static String readPrevFileHash(String fileName) {
-		File file = new File(fileName);
-		if (file.exists() == false) {
-			log.warn("File does not exist {}", fileName);
-			return null;
-		}
-		byte[] prevFileHash = new byte[48];
-		try (DataInputStream dis = new DataInputStream(new FileInputStream(file))) {
-			// record_format_version
-			dis.readInt();
-			// version
-			dis.readInt();
+    /**
+     * Given a record stream file data, read its prevFileHash
+     * @return return previous file hash's Hex String
+     */
+    public static String readPrevFileHash(ByteBuffer data) throws NotFoundException {
+        byte[] prevFileHash = new byte[48];
+        data.rewind();
+        try {
+            // record_format_version
+            data.getInt();
 
-			byte typeDelimiter = dis.readByte();
+            // version
+            data.getInt();
 
-			if (typeDelimiter == FileDelimiter.RECORD_TYPE_PREV_HASH) {
-				dis.read(prevFileHash);
-				String hexString = Hex.encodeHexString(prevFileHash);
-				log.trace("Read previous file hash {} for file {}", hexString, fileName);
-				return hexString;
-			} else {
-				log.error("Expecting previous file hash, but found file delimiter {} for file {}", typeDelimiter, fileName);
-			}
-		} catch (Exception e) {
-			log.error("Error reading previous file hash {}", fileName, e);
-		}
+            byte typeDelimiter = data.get();
 
-		return null;
-	}
+            if (typeDelimiter == FileDelimiter.RECORD_TYPE_PREV_HASH) {
+                data.get(prevFileHash);
+                return Hex.encodeHexString(prevFileHash);
+            } else {
+                throw new NotFoundException("Expecting previous file hash, but found file delimiter " + typeDelimiter);
+            }
+        } catch (Exception e) {
+            throw new NotFoundException("Error reading previous file hash", e);
+        }
+    }
 }

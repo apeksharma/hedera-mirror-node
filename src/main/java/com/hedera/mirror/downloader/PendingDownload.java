@@ -21,9 +21,15 @@ package com.hedera.mirror.downloader;
  */
 
 import com.google.common.base.Stopwatch;
+
+import com.hedera.mirror.domain.StreamItem;
+
+import lombok.Data;
 import lombok.Value;
 import lombok.experimental.NonFinal;
 import lombok.extern.log4j.Log4j2;
+import software.amazon.awssdk.core.ResponseBytes;
+import software.amazon.awssdk.services.s3.model.GetObjectResponse;
 
 import java.io.File;
 import java.util.concurrent.CompletableFuture;
@@ -34,20 +40,20 @@ import java.util.concurrent.CompletableFuture;
  * or not.
  */
 @Log4j2
-@Value
+@Data
 class PendingDownload {
-    CompletableFuture future;
+    CompletableFuture<ResponseBytes<GetObjectResponse>> future;
 	Stopwatch stopwatch;
-	File file; // Destination file
+	StreamItem streamItem;
 	String s3key; // Source S3 key
 	@NonFinal boolean alreadyWaited = false; // has waitForCompletion been called
 	@NonFinal boolean downloadSuccessful;
 
-	PendingDownload(final CompletableFuture future, final File file, final String s3key) {
+	PendingDownload(final CompletableFuture<ResponseBytes<GetObjectResponse>> future, final String s3key, StreamItem streamItem) {
 		this.future = future;
 		this.stopwatch = Stopwatch.createStarted();
-		this.file = file;
 		this.s3key = s3key;
+		this.streamItem = streamItem;
 	}
 
 	/**
@@ -59,7 +65,8 @@ class PendingDownload {
 		}
 		alreadyWaited = true;
 		try {
-            future.get();
+            var result = future.get();
+            this.streamItem.setDataBytes(result.asByteBuffer());  // in-memory copy
             log.debug("Finished downloading {} in {}", s3key, stopwatch);
             downloadSuccessful = true;
 		} catch (InterruptedException e) {

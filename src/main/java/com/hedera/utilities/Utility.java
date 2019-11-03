@@ -22,10 +22,13 @@ package com.hedera.utilities;
  * ‍
  */
 
+import com.fasterxml.jackson.databind.util.ByteBufferBackedInputStream;
 import com.google.protobuf.GeneratedMessageV3;
 import com.google.protobuf.InvalidProtocolBufferException;
 import com.google.protobuf.TextFormat;
-import com.hedera.mirror.downloader.Downloader;
+
+import com.hedera.mirror.domain.StreamItem;
+import com.hedera.mirror.domain.StreamType;
 import com.hedera.filedelimiters.FileDelimiter;
 import com.hederahashgraph.api.proto.java.AccountID;
 import com.hederahashgraph.api.proto.java.Key;
@@ -35,7 +38,6 @@ import com.hederahashgraph.api.proto.java.TransactionBody;
 import com.hederahashgraph.api.proto.java.TransactionID;
 
 import lombok.extern.log4j.Log4j2;
-import org.apache.commons.codec.DecoderException;
 import org.apache.commons.codec.binary.Hex;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.tuple.Pair;
@@ -45,9 +47,10 @@ import javax.annotation.Nullable;
 import java.io.DataInputStream;
 import java.io.File;
 import java.io.FileInputStream;
-import java.io.FileNotFoundException;
 import java.io.IOException;
+import java.io.InputStream;
 import java.net.URL;
+import java.nio.BufferOverflowException;
 import java.nio.ByteBuffer;
 import java.nio.file.*;
 import java.security.MessageDigest;
@@ -74,54 +77,71 @@ public class Utility {
 	 * Verify if a file's hash is equal to the hash contained in sig file
 	 * @return
 	 */
-	public static boolean hashMatch(byte[] hash, File rcdFile) {
-		byte[] fileHash = Utility.getFileHash(rcdFile.getPath());
+	public static boolean hashMatch(byte[] hash, StreamItem streamItem) {
+		byte[] fileHash = Utility.getStreamItemHash(streamItem);
 		return Arrays.equals(fileHash, hash);
 	}
 	/**
 	 * 1. Extract the Hash of the content of corresponding RecordStream file. This Hash is the signed Content of this signature
 	 * 2. Extract signature from the file.
-	 * @param file
-	 * @return
 	 */
-	public static Pair<byte[], byte[]> extractHashAndSigFromFile(File file) {
-		byte[] sig = null;
+	public static Pair<byte[], byte[]> extractHashAndSig(StreamItem streamItem) {
+		ByteBuffer data = streamItem.getDataBytes();
+		data.rewind();
+        byte[] fileHash = null;
+        byte[] sig = null;
 
-		if (file.exists() == false) {
-			log.info("File does not exist {}", file.getPath());
-			return null;
-		}
-
-		try (DataInputStream dis = new DataInputStream(new FileInputStream(file))) {
-			byte[] fileHash = new byte[48];
-
-			while (dis.available() != 0) {
-				byte typeDelimiter = dis.readByte();
+		try {
+			while (true) {
+				byte typeDelimiter = data.get();
 
 				switch (typeDelimiter) {
 					case FileDelimiter.SIGNATURE_TYPE_FILE_HASH:
-						dis.read(fileHash);
+                        fileHash = new byte[48];
+					    data.get(fileHash);
 						break;
 
 					case FileDelimiter.SIGNATURE_TYPE_SIGNATURE:
-						int sigLength = dis.readInt();
-						byte[] sigBytes = new byte[sigLength];
-						dis.readFully(sigBytes);
-						sig = sigBytes;
+						int sigLength = data.getInt();
+						sig = new byte[sigLength];
+						data.get(sig);
 						break;
 					default:
-						log.error("Unknown file delimiter {} in signature file {}", typeDelimiter, file);
+						log.error("Unknown file delimiter {} in {}", typeDelimiter, streamItem);
 						return null;
 				}
+				if (sig != null && fileHash != null) {
+                    return Pair.of(fileHash, sig);
+                }
 			}
-
-			return Pair.of(fileHash, sig);
-		} catch (Exception e) {
-			log.error("Unable to extract hash and signature from file {}", file, e);
+		} catch (BufferOverflowException e) {
+			log.error("Unable to extract hash and signature from {}", streamItem, e);
 		}
-
 		return null;
 	}
+
+    /**
+     * Calculate SHA384 hash of given streamItem
+     * @return byte array of hash value of null if calculating has failed
+     */
+    public static byte[] getStreamItemHash(StreamItem streamItem) {
+        MessageDigest md;
+        if (streamItem.getStreamType() == StreamType.RECORD) {
+            return getRecordStreamItemHash(streamItem);
+        } else if (streamItem.getStreamType() == StreamType.EVENT) {
+            return getEventStreamItemHash(streamItem);
+        } else {
+            try {
+                md = MessageDigest.getInstance(FileDelimiter.HASH_ALGORITHM);
+                md.update(streamItem.getDataBytes());
+                return md.digest();
+
+            } catch (NoSuchAlgorithmException e) {
+                log.error("Exception", e);
+                return null;
+            }
+        }
+    }
 
 	/**
 	 * Calculate SHA384 hash of a binary file
@@ -152,16 +172,26 @@ public class Utility {
 
 	/**
 	 * Calculate SHA384 hash of an event file
-	 *
 	 * @param filename
 	 * 		file name
 	 * @return byte array of hash value of null if calculating has failed
 	 */
 	private static byte[] getEventFileHash(String filename) {
-		var file = new File(filename);
-		// for >= version3, we need to calculate hash for content;
-		boolean calculateContentHash = false;
+        try {
+            return getEventInputStreamHash(new FileInputStream(new File(filename)), filename);
+        } catch (Exception e) {
+            log.error("Exception ", e);
+            return null;
+        }
+    }
 
+    private static byte[] getEventStreamItemHash(StreamItem streamItem) {
+        return getEventInputStreamHash(
+                new ByteBufferBackedInputStream(streamItem.getDataBytes()), streamItem.getFileName());
+    }
+
+
+    private static byte[] getEventInputStreamHash(InputStream inputStream, String filename) {
 		// MessageDigest for getting the file Hash
 		// suppose file[i] = p[i] || h[i] || c[i];
 		// p[i] denotes the bytes before previousFileHash;
@@ -174,7 +204,9 @@ public class Utility {
 		// is only used in Version3, for getting the Hash for content after prevFileHash in current file, i.e., hash
 		// (c[i])
 
-		try (DataInputStream dis = new DataInputStream(new FileInputStream(file))) {
+        // for >= version3, we need to calculate hash for content;
+        boolean calculateContentHash = false;
+		try (DataInputStream dis = new DataInputStream(inputStream)) {
 			MessageDigest md;
 			MessageDigest mdForContent = null;
 
@@ -217,7 +249,7 @@ public class Utility {
 						}
 						break;
 					default:
-						log.error("Unknown event file delimiter {} for file {}", typeDelimiter, file);
+						log.error("Unknown event file delimiter {} for file {}", typeDelimiter, filename);
 						return null;
 				}
 			}
@@ -234,17 +266,31 @@ public class Utility {
 		}
 	}
 
-	/**
-	 * Calculate SHA384 hash of a record file
-	 *
-	 * @param filename
-	 * 		file name
-	 * @return byte array of hash value of null if calculating has failed
-	 */
-	private static byte[] getRecordFileHash(String filename) {
+    /**
+     * Calculate SHA384 hash of an event file
+     * @param filename
+     * 		file name
+     * @return byte array of hash value of null if calculating has failed
+     */
+    private static byte[] getRecordFileHash(String filename) {
+        try {
+            return getRecordInputStreamHash(new FileInputStream(new File(filename)), filename);
+        } catch (Exception e) {
+            log.error("Exception ", e);
+            return null;
+        }
+    }
+
+    private static byte[] getRecordStreamItemHash(StreamItem streamItem) {
+        return getRecordInputStreamHash(
+                new ByteBufferBackedInputStream(streamItem.getDataBytes()), streamItem.getFileName());
+    }
+
+
+    private static byte[] getRecordInputStreamHash(InputStream inputStream, String filename) {
 		byte[] readFileHash = new byte[48];
 
-		try (DataInputStream dis = new DataInputStream(new FileInputStream(filename))) {
+		try (DataInputStream dis = new DataInputStream(inputStream)) {
 			MessageDigest md = MessageDigest.getInstance(FileDelimiter.HASH_ALGORITHM);
 			MessageDigest mdForContent = MessageDigest.getInstance(FileDelimiter.HASH_ALGORITHM);
 

@@ -29,6 +29,7 @@ import com.hedera.mirror.parser.FileParser;
 import com.hedera.platform.Transaction;
 import com.hedera.utilities.Utility;
 
+import javassist.NotFoundException;
 import lombok.extern.log4j.Log4j2;
 import org.apache.commons.codec.binary.Hex;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -39,6 +40,7 @@ import java.io.DataInputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
+import java.nio.ByteBuffer;
 import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.sql.Connection;
@@ -459,47 +461,34 @@ public class EventStreamFileParser implements FileParser {
 		return true;
 	}
 
-	/**
-	 * Given a eventStream file name, read its prevFileHash
-	 *
-	 * @param fileName
-	 * 		the name of eventStream file to read
-	 * @return return previous file hash's Hex String
-	 */
-	static public String readPrevFileHash(String fileName) {
-		File file = new File(fileName);
-		String readPrevFileHash;
+    /**
+     * Given a eventStream file data, read its prevFileHash
+     * @return return previous file hash's Hex String
+     */
+    static public String readPrevFileHash(ByteBuffer data) throws NotFoundException {
+        String readPrevFileHash;
 
-		if (file.exists() == false) {
-			log.info("File does not exist {}", fileName);
-			return null;
-		}
+        try {
+            int eventStreamFileVersion = data.getInt();
 
-		try (DataInputStream dis = new DataInputStream(new FileInputStream(file))) {
-			int eventStreamFileVersion = dis.readInt();
-
-			log.trace("EventStream file format version {}", eventStreamFileVersion);
-			if (eventStreamFileVersion < FileDelimiter.EVENT_STREAM_FILE_VERSION_LEGACY) {
-				log.error("EventStream file format version doesn't match");
-				return null;
-			}
-			while (dis.available() != 0) {
-				byte typeDelimiter = dis.readByte();
-				if (typeDelimiter == FileDelimiter.EVENT_TYPE_PREV_HASH) {
-					byte[] readPrevFileHashBytes = new byte[48];
-					dis.read(readPrevFileHashBytes);
-					readPrevFileHash = Hex.encodeHexString(readPrevFileHashBytes);
-					return readPrevFileHash;
-				} else {
-					log.error("Unknown record file delimiter {} for file {}", typeDelimiter, file);
-					return null;
-				}
-			}
-		} catch (Exception e) {
-			log.error("Error reading previous file hash for file {}", file, e);
-		}
-		return null;
-	}
+            log.trace("EventStream file format version {}", eventStreamFileVersion);
+            if (eventStreamFileVersion < FileDelimiter.EVENT_STREAM_FILE_VERSION_LEGACY) {
+                log.error("EventStream file format version doesn't match");
+                return null;
+            }
+            byte typeDelimiter = data.get();
+            if (typeDelimiter == FileDelimiter.EVENT_TYPE_PREV_HASH) {
+                byte[] readPrevFileHashBytes = new byte[48];
+                data.get(readPrevFileHashBytes);
+                readPrevFileHash = Hex.encodeHexString(readPrevFileHashBytes);
+                return readPrevFileHash;
+            } else {
+                throw new NotFoundException("Unknown record file delimiter " + typeDelimiter);
+            }
+        } catch (Exception e) {
+            throw new NotFoundException("Error reading previous file hash", e);
+        }
+    }
 
 	@Override
 	@Scheduled(fixedRateString = "${hedera.mirror.parser.event.frequency:60000}")

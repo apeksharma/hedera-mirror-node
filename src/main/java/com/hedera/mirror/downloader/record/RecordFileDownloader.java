@@ -21,16 +21,19 @@ package com.hedera.mirror.downloader.record;
  */
 
 import com.hedera.mirror.addressbook.NetworkAddressBook;
+import com.hedera.mirror.domain.StreamItem;
 import com.hedera.mirror.downloader.Downloader;
 import com.hedera.mirror.domain.ApplicationStatusCode;
 import com.hedera.mirror.repository.ApplicationStatusRepository;
 import com.hedera.mirror.parser.record.RecordFileParser;
 
+import lombok.Data;
 import lombok.extern.log4j.Log4j2;
 import org.springframework.scheduling.annotation.Scheduled;
 import software.amazon.awssdk.services.s3.S3AsyncClient;
 
 import javax.inject.Named;
+import java.nio.ByteBuffer;
 
 @Log4j2
 @Named
@@ -59,7 +62,7 @@ public class RecordFileDownloader extends Downloader {
         return ApplicationStatusCode.RECORD_HASH_MISMATCH_BYPASS_UNTIL_AFTER;
     }
 
-    protected String getPrevFileHash(String filePath) {
-        return RecordFileParser.readPrevFileHash(filePath);
+    protected String getPrevFileHash(ByteBuffer data) {
+        return RecordFileParser.readPrevFileHash(data);
     }
 }

@@ -22,6 +22,7 @@ package com.hedera.mirror.downloader;
 
 import com.hedera.mirror.addressbook.NetworkAddressBook;
 import com.hedera.mirror.domain.NodeAddress;
+import com.hedera.mirror.domain.StreamItem;
 import com.hedera.utilities.Utility;
 import lombok.extern.log4j.Log4j2;
 import org.apache.commons.codec.DecoderException;
@@ -30,6 +31,8 @@ import org.apache.commons.lang3.tuple.Pair;
 
 import javax.persistence.Tuple;
 import java.io.File;
+import java.io.InputStream;
+import java.nio.ByteBuffer;
 import java.security.PublicKey;
 import java.security.Signature;
 import java.util.ArrayList;
@@ -53,31 +56,30 @@ public class NodeSignatureVerifier {
 	}
 
     /**
-     * Verifies that the signature files are signed by corresponding node's PublicKey. For valid signature files, we
+     * Verifies that the signature are signed by corresponding node's PublicKey. For valid signature, we
      * compare their Hashes to see if more than 2/3 Hashes match. If more than 2/3 Hashes match, we return a List of
-     * Files which contains this Hash.
-     * @param sigFiles a list of a sig files which have the same timestamp
+     * Signatures which contains this Hash.
+     * @param sigStreamItems a list of a sig StreamItems which have the same timestamp
      * @return Pair of
-     *     <hash of valid data file, list of valid sig files>. Valid means the signature is valid and the Hash is
-     *     agreed by super-majority nodes.
+     *     <hash of valid data file, list of valid sig StreamItem(s)>. Valid means the signature is valid and the Hash
+     *     is agreed by super-majority nodes.
      *     If validity of signatures can not be established, then returns <null, empty list>.
      */
-    public Pair<byte[], List<File>> verifySignatureFiles(List<File> sigFiles) {
-        // If a signature is valid, we put the Hash in its content and its File to the map, to see if more than 2/3
-        // valid signatures have the same Hash
-        Map<String, Set<File>> hashToSigFiles = new HashMap<>();
-        for (File sigFile : sigFiles) {
-            Pair<byte[], byte[]> hashAndSig = Utility.extractHashAndSigFromFile(sigFile);
+    public Pair<byte[], List<StreamItem>> verifySignatureFiles(List<StreamItem> sigStreamItems) {
+        // If a signature is valid, we put the Hash in its content and its StreamItem to the map, to see if more than
+        // 2/3 valid signatures have the same Hash
+        Map<String, Set<StreamItem>> hashToSigFiles = new HashMap<>();
+        for (StreamItem sigStreamItem : sigStreamItems) {
+            Pair<byte[], byte[]> hashAndSig = Utility.extractHashAndSig(sigStreamItem);
             if (hashAndSig == null) {
                 continue;
             }
-            String nodeAccountID = Utility.getAccountIDStringFromFilePath(sigFile.getPath());
-            if (verifySignature(hashAndSig.getLeft(), hashAndSig.getRight(), nodeAccountID, sigFile.getPath())) {
+            if (verifySignature(hashAndSig.getLeft(), hashAndSig.getRight(), sigStreamItem.getNodeAccountId(), sigStreamItem)) {
                 String hashString = Hex.encodeHexString(hashAndSig.getLeft());
                 hashToSigFiles.putIfAbsent(hashString, new HashSet<>());  // only one key present in common case, no efficiency issues.
-                hashToSigFiles.get(hashString).add(sigFile);
+                hashToSigFiles.get(hashString).add(sigStreamItem);
             } else {
-                log.error("Invalid signature in file {}", sigFile.getPath());
+                log.error("Invalid signature in {}", sigStreamItem);
             }
         }
 
@@ -108,7 +110,7 @@ public class NodeSignatureVerifier {
 	 * @return true if the signature is valid
 	 */
 	private boolean verifySignature(byte[] data, byte[] signature,
-			String nodeAccountID, String filePath) {
+			String nodeAccountID, StreamItem streamItem) {
 		PublicKey publicKey = nodeIDPubKeyMap.get(nodeAccountID);
 		if (publicKey == null) {
 			log.warn("Missing PublicKey for node {}", nodeAccountID);
@@ -116,18 +118,18 @@ public class NodeSignatureVerifier {
 		}
 
 		if (signature == null) {
-			log.error("Missing signature for file {}", filePath);
+			log.error("Missing signature for {}", streamItem);
 			return false;
 		}
 
 		try {
-			log.trace("Verifying signature of file {} with public key of node {}", filePath, nodeAccountID);
+			log.trace("Verifying signature of {} with public key of node {}", streamItem, nodeAccountID);
 			Signature sig = Signature.getInstance("SHA384withRSA", "SunRsaSign");
 			sig.initVerify(publicKey);
 			sig.update(data);
 			return sig.verify(signature);
 		} catch (Exception e) {
-			log.error("Failed to verify Signature: {}, PublicKey: {}, NodeID: {}, File: {}", signature, publicKey, nodeAccountID, filePath, e);
+			log.error("Failed to verify Signature: {}, PublicKey: {}, NodeID: {}, {}", signature, publicKey, nodeAccountID, streamItem, e);
 		}
 		return false;
 	}

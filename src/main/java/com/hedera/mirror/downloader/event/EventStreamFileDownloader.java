@@ -26,11 +26,13 @@ import com.hedera.mirror.downloader.Downloader;
 import com.hedera.mirror.repository.ApplicationStatusRepository;
 import com.hedera.mirror.parser.event.EventStreamFileParser;
 
+import javassist.NotFoundException;
 import lombok.extern.log4j.Log4j2;
 import org.springframework.scheduling.annotation.Scheduled;
 import software.amazon.awssdk.services.s3.S3AsyncClient;
 
 import javax.inject.Named;
+import java.nio.ByteBuffer;
 
 @Log4j2
 @Named
@@ -59,7 +61,7 @@ public class EventStreamFileDownloader extends Downloader {
         return ApplicationStatusCode.EVENT_HASH_MISMATCH_BYPASS_UNTIL_AFTER;
     }
 
-    protected String getPrevFileHash(String filePath) {
-        return EventStreamFileParser.readPrevFileHash(filePath);
+    protected String getPrevFileHash(ByteBuffer data) throws NotFoundException {
+        return EventStreamFileParser.readPrevFileHash(data);
     }
 }
