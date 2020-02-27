@@ -593,16 +593,14 @@ public class Utility {
         return StringUtils.isBlank(hash) || hash.equals(EMPTY_HASH);
     }
 
-    public static void moveFileToParsedDir(String fileName, String subDir) {
+    public static void moveFileToParsedDir(String fileName, Path destDir) {
         File sourceFile = new File(fileName);
-        String pathToSaveTo = sourceFile.getParentFile().getParentFile().getPath() + subDir;
         String shortFileName = sourceFile.getName().substring(0, 10).replace("-", "/");
-        pathToSaveTo += shortFileName;
+        Path pathToSaveTo = destDir.resolve(shortFileName);
 
-        File parsedDir = new File(pathToSaveTo);
-        parsedDir.mkdirs();
+        pathToSaveTo.toFile().mkdirs();
 
-        Path destination = Paths.get(pathToSaveTo, sourceFile.getName());
+        Path destination = pathToSaveTo.resolve(sourceFile.getName());
         try {
             Files.move(sourceFile.toPath(), destination, StandardCopyOption.REPLACE_EXISTING);
             log.trace("{} has been moved to {}", sourceFile, pathToSaveTo);

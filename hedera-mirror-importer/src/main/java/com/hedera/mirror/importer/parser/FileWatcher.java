@@ -20,13 +20,24 @@ package com.hedera.mirror.importer.parser;
  * ‍
  */
 
+import com.google.common.base.Stopwatch;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
+import java.io.IOException;
+import java.io.InputStream;
 import java.nio.file.FileSystems;
 import java.nio.file.Path;
 import java.nio.file.StandardWatchEventKinds;
 import java.nio.file.WatchEvent;
 import java.nio.file.WatchKey;
 import java.nio.file.WatchService;
+import java.util.Arrays;
+import java.util.List;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
+
+import com.hedera.mirror.importer.exception.ParserException;
 
 import lombok.RequiredArgsConstructor;
 import org.apache.logging.log4j.LogManager;
@@ -36,6 +47,7 @@ import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Async;
 
 import com.hedera.mirror.importer.util.ShutdownHelper;
+import com.hedera.mirror.importer.util.Utility;
 
 @RequiredArgsConstructor
 public abstract class FileWatcher {
@@ -43,13 +55,11 @@ public abstract class FileWatcher {
     protected final Logger log = LogManager.getLogger(getClass());
     protected final ParserProperties parserProperties;
 
-    protected abstract boolean isEnabled();
-
     @Async
     @EventListener(ApplicationReadyEvent.class)
     public void watch() {
         Path path = parserProperties.getValidPath();
-        if (!isEnabled()) {
+        if (!parserProperties.isEnabled()) {
             log.info("Skip watching directory: {}", path);
             return;
         }
@@ -63,7 +73,7 @@ public abstract class FileWatcher {
                     .register(watcher, StandardWatchEventKinds.ENTRY_CREATE, StandardWatchEventKinds.ENTRY_MODIFY);
             boolean valid = rootKey.isValid();
 
-            while (valid && isEnabled()) {
+            while (valid && parserProperties.isEnabled()) {
                 WatchKey key;
                 try {
                     key = watcher.poll(100, TimeUnit.MILLISECONDS);
@@ -97,5 +107,56 @@ public abstract class FileWatcher {
         }
     }
 
+    public interface FileProcessor {
+        boolean process(String fileName, InputStream is) throws ParserException;
+    }
+
+    protected void listAndProcessAllFiles(FileProcessor fileProcessor) {
+        Stopwatch stopwatch = Stopwatch.createStarted();
+        try {
+            Path validDir = parserProperties.getValidPath();
+            log.debug("Parsing files from {}", validDir);
+            String[] unsortedFiles = validDir.toFile().list(); // get all files under the valid directory
+            Arrays.sort(unsortedFiles);           // sorted by name (timestamp)
+
+            // add directory prefix to get full path
+            List<File> sortedFiles = Arrays.stream(unsortedFiles)
+                    .filter(this::isDataFile)
+                    .map(s -> validDir.resolve(s).toFile())
+                    .collect(Collectors.toList());
+
+            processAllFiles(sortedFiles, fileProcessor);
+        } catch (Exception e) {
+            log.error("Error processing balances files after {}", stopwatch, e);
+        }
+    }
+
+    protected void processAllFiles(List<File> files, FileProcessor fileProcessor)
+            throws IOException, ParserException {
+        Stopwatch stopwatch = Stopwatch.createStarted();
+        for (File file : files) {
+            if (ShutdownHelper.isStopping()) {
+                throw new RuntimeException("Process is shutting down");
+            }
+            if (!file.exists()) {
+                log.warn("File does not exist : {}", file);
+                return ;
+            }
+            log.trace("Processing file: {}", file);
+            if (fileProcessor.process(file.getName(), new FileInputStream(file))) {
+                // move it
+                Utility.moveFileToParsedDir(file.getCanonicalPath(), parserProperties.getParsedPath());
+            }
+            // TODO: add config 'ignoreBadFiles'. true => continue parsing. false => block parsing
+            // true for balances, false for record file
+        }
+        log.info("Completed processing {} files in {}", files.size(), stopwatch);
+    }
+
     public abstract void onCreate();
+
+    /**
+     * @return true if the file represents data file, and not the sig file.
+     */
+    public abstract boolean isDataFile(String filename);
 }

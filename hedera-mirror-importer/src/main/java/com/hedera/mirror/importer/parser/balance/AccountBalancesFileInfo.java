@@ -30,6 +30,7 @@ import lombok.extern.log4j.Log4j2;
 
 import com.hedera.mirror.importer.util.TimestampConverter;
 
+// TODO: add tests
 @Log4j2
 public final class AccountBalancesFileInfo {
     public static final Pattern FILENAME_PATTERN = Pattern.compile(
@@ -45,25 +46,19 @@ public final class AccountBalancesFileInfo {
      * Given a path to an account balances file - validate that the filename matches the expected pattern and extract
      * the timestamp from the filename.
      *
-     * @param filePath
      * @throws IllegalArgumentException if the filename doesn't match the expected pattern
      */
-    public AccountBalancesFileInfo(Path filePath) throws IllegalArgumentException {
-        var fn = filePath.getFileName().toString();
-        Matcher m = FILENAME_PATTERN.matcher(fn);
+    public AccountBalancesFileInfo(String fileName) throws IllegalArgumentException {
+        Matcher m = FILENAME_PATTERN.matcher(fileName);
         if (!m.find()) {
             throw new IllegalArgumentException(String.format(
-                    "Invalid date in account balance filename %s", fn));
+                    "Invalid date in account balance filename %s", fileName));
         }
         try {
             filenameTimestamp = timestampConverter.toInstant(m);
         } catch (IllegalArgumentException e) {
             throw new IllegalArgumentException(String.format(
-                    "Invalid date in account balance filename %s", fn), e);
+                    "Invalid date in account balance filename %s", fileName), e);
         }
-    }
-
-    public static boolean hasExpectedFilenameFormat(Path filename) {
-        return FILENAME_PATTERN.matcher(filename.getFileName().toString()).find();
     }
 }

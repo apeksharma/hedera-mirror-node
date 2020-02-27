@@ -36,21 +36,15 @@ import java.nio.file.Path;
 import java.sql.SQLException;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.List;
-import java.util.stream.Collectors;
 import javax.inject.Named;
 import lombok.extern.log4j.Log4j2;
 import org.apache.commons.codec.binary.Hex;
-import org.springframework.scheduling.annotation.Scheduled;
 
 import com.hedera.mirror.importer.domain.ApplicationStatusCode;
-import com.hedera.mirror.importer.parser.FileParser;
+import com.hedera.mirror.importer.parser.FileWatcher;
 import com.hedera.mirror.importer.parser.domain.RecordItem;
 import com.hedera.mirror.importer.repository.ApplicationStatusRepository;
 import com.hedera.mirror.importer.util.FileDelimiter;
-import com.hedera.mirror.importer.util.ShutdownHelper;
 import com.hedera.mirror.importer.util.Utility;
 
 /**
@@ -58,7 +52,7 @@ import com.hedera.mirror.importer.util.Utility;
  */
 @Log4j2
 @Named
-public class RecordFileParser implements FileParser {
+public class RecordFileParser extends FileWatcher {
 
     private final ApplicationStatusRepository applicationStatusRepository;
     private final RecordParserProperties parserProperties;
@@ -73,6 +67,7 @@ public class RecordFileParser implements FileParser {
     public RecordFileParser(ApplicationStatusRepository applicationStatusRepository,
                             RecordParserProperties parserProperties, MeterRegistry meterRegistry,
                             RecordItemParser recordItemParser) {
+        super(parserProperties);
         this.applicationStatusRepository = applicationStatusRepository;
         this.parserProperties = parserProperties;
         this.meterRegistry = meterRegistry;
@@ -144,13 +139,9 @@ public class RecordFileParser implements FileParser {
      *
      * @param fileName             the name of record file to read
      * @param inputStream          input stream of bytes in the record file
-     * @param expectedPrevFileHash the hash of the previous record file in the series
-     * @param thisFileHash         the hash of this file
      * @return return boolean indicating method success
-     * @throws Exception
      */
-    private boolean loadRecordFile(String fileName, InputStream inputStream, String expectedPrevFileHash,
-                                   String thisFileHash) {
+    private boolean loadRecordFile(String fileName, InputStream inputStream) {
         var result = initFile(fileName);
         if (result == RecordItemParser.INIT_RESULT.SKIP) {
             return true; // skip this fle
@@ -158,6 +149,9 @@ public class RecordFileParser implements FileParser {
             rollback();
             return false;
         }
+        String expectedPrevFileHash = applicationStatusRepository
+                .findByStatusCode(ApplicationStatusCode.LAST_PROCESSED_RECORD_HASH);
+        String thisFileHash = Hex.encodeHexString(Utility.getFileHash(fileName));
         long counter = 0;
         Stopwatch stopwatch = Stopwatch.createStarted();
         Integer recordFileVersion = 0;
@@ -280,78 +274,21 @@ public class RecordFileParser implements FileParser {
         return success;
     }
 
-    /**
-     * read and parse a list of record files
-     *
-     * @throws Exception
-     */
-    private void loadRecordFiles(List<String> fileNames) {
-        String prevFileHash = applicationStatusRepository
-                .findByStatusCode(ApplicationStatusCode.LAST_PROCESSED_RECORD_HASH);
-        Collections.sort(fileNames);
+//            InputStream fileInputStream;
+//            try {
+//                fileInputStream = new FileInputStream(new File(name));
+//            } catch (FileNotFoundException e) {
+//                log.warn("File does not exist {}", name);
+//                return;
+//            }
 
-        for (String name : fileNames) {
-            if (ShutdownHelper.isStopping()) {
-                return;
-            }
-            String thisFileHash = Hex.encodeHexString(Utility.getFileHash(name));
-            InputStream fileInputStream;
-            try {
-                fileInputStream = new FileInputStream(new File(name));
-            } catch (FileNotFoundException e) {
-                log.warn("File does not exist {}", name);
-                return;
-            }
-            if (loadRecordFile(name, fileInputStream, prevFileHash, thisFileHash)) {
-                prevFileHash = thisFileHash;
-                Utility.moveFileToParsedDir(name, "/parsedRecordFiles/");
-            } else {
-                return;
-            }
-        }
-    }
-
-    @Override
-    @Scheduled(fixedRateString = "${hedera.mirror.parser.record.frequency:500}")
-    public void parse() {
-        try {
-            if (!parserProperties.isEnabled()) {
-                return;
+            // TODO: Test for file sorted
+            @Override
+            public void onCreate () {
+                listAndProcessAllFiles(this::loadRecordFile);
             }
 
-            if (ShutdownHelper.isStopping()) {
-                return;
+            public boolean isDataFile (String filename){
+                return Utility.isRecordFile(filename);
             }
-
-            Path path = parserProperties.getValidPath();
-            log.debug("Parsing record files from {}", path);
-            if (recordItemParser.start()) {
-
-                File file = path.toFile();
-                if (file.isDirectory()) { //if it's a directory
-
-                    String[] files = file.list(); // get all files under the directory
-                    Arrays.sort(files);           // sorted by name (timestamp)
-
-                    // add directory prefix to get full path
-                    List<String> fullPaths = Arrays.asList(files).stream()
-                            .filter(f -> Utility.isRecordFile(f))
-                            .map(s -> file + "/" + s)
-                            .collect(Collectors.toList());
-
-                    if (fullPaths != null && fullPaths.size() != 0) {
-                        log.trace("Processing record files: {}", fullPaths);
-                        loadRecordFiles(fullPaths);
-                    } else {
-                        log.debug("No files to parse");
-                    }
-                } else {
-                    log.error("Input parameter is not a folder: {}", path);
-                }
-                recordItemParser.finish();
-            }
-        } catch (Exception e) {
-            log.error("Error parsing files", e);
-        }
-    }
 }

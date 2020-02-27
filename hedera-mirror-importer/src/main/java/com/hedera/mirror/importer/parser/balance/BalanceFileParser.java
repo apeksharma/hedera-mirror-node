@@ -21,20 +21,22 @@ package com.hedera.mirror.importer.parser.balance;
  */
 
 import com.google.common.base.Stopwatch;
-
 import java.io.File;
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import javax.inject.Named;
 
 import com.hedera.mirror.importer.parser.FileWatcher;
-import com.hedera.mirror.importer.util.ShutdownHelper;
 import com.hedera.mirror.importer.util.Utility;
 
 @Named
 public class BalanceFileParser extends FileWatcher {
+
+    private final FileProcessor balanceFileProcessor =
+            (balanceFileName, inputStream) ->
+                    new AccountBalancesFileLoader((BalanceParserProperties) parserProperties, balanceFileName, inputStream)
+                            .loadAccountBalances();
 
     public BalanceFileParser(BalanceParserProperties parserProperties) {
         super(parserProperties);
@@ -43,18 +45,17 @@ public class BalanceFileParser extends FileWatcher {
     @Override
     public void onCreate() {
         processLastBalanceFile();
-        processAllFilesForHistory();
+        listAndProcessAllFiles(balanceFileProcessor);
     }
 
     @Override
-    protected boolean isEnabled() {
-        return parserProperties.isEnabled();
+    public boolean isDataFile(String filename) {
+        return Utility.isBalanceFile(filename);
     }
 
-    private File getLatestBalanceFile() throws IOException {
+    // Find all files in path. Return the greatest file name.
+    private File getLatestBalanceFile() {
         File lastFile = null;
-        // find all files in path
-        // return the greatest file name
 
         File balanceFilePath = parserProperties.getValidPath().toFile();
         List<String> balancefiles = new ArrayList<>();
@@ -65,53 +66,20 @@ public class BalanceFileParser extends FileWatcher {
         }
         if (balancefiles.size() != 0) {
             Collections.sort(balancefiles);
-
             lastFile = parserProperties.getValidPath().resolve(balancefiles.get(balancefiles.size() - 1)).toFile();
         }
-
         return lastFile;
-    }
-
-    private void processAllFilesForHistory() {
-        Stopwatch stopwatch = Stopwatch.createStarted();
-
-        try {
-            File balanceFilePath = parserProperties.getValidPath().toFile();
-            File[] balanceFiles = balanceFilePath.listFiles();
-
-            for (File balanceFile : balanceFiles) {
-                if (ShutdownHelper.isStopping()) {
-                    throw new RuntimeException("Process is shutting down");
-                }
-                if (new AccountBalancesFileLoader((BalanceParserProperties) parserProperties, balanceFile.toPath())
-                        .loadAccountBalances()) {
-                    // move it
-                    Utility.moveFileToParsedDir(balanceFile.getCanonicalPath(), "/parsedBalanceFiles/");
-                }
-            }
-            log.info("Completed processing {} balance files in {}", balanceFiles.length, stopwatch);
-        } catch (Exception e) {
-            log.error("Error processing balances files after {}", stopwatch, e);
-        }
     }
 
     private void processLastBalanceFile() {
         Stopwatch stopwatch = Stopwatch.createStarted();
-
         try {
             File balanceFile = getLatestBalanceFile();
-
             if (balanceFile == null) {
                 return;
             }
-
             log.debug("Processing last balance file {}", balanceFile);
-
-            if (new AccountBalancesFileLoader((BalanceParserProperties) parserProperties, balanceFile.toPath())
-                    .loadAccountBalances()) {
-                // move it
-                Utility.moveFileToParsedDir(balanceFile.getCanonicalPath(), "/parsedBalanceFiles/");
-            }
+            processAllFiles(List.of(balanceFile), balanceFileProcessor);
         } catch (Exception e) {
             log.error("Error processing balances files after {}", stopwatch, e);
         }

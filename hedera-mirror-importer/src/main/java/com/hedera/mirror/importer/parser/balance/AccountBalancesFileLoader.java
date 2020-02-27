@@ -21,18 +21,15 @@ package com.hedera.mirror.importer.parser.balance;
  */
 
 import com.google.common.base.Stopwatch;
-
 import java.io.BufferedReader;
-import java.io.FileInputStream;
 import java.io.FileNotFoundException;
+import java.io.InputStream;
 import java.io.InputStreamReader;
-import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.time.Instant;
 import java.util.stream.Stream;
-
 import lombok.Getter;
 import lombok.extern.log4j.Log4j2;
 
@@ -45,7 +42,7 @@ import com.hedera.mirror.importer.util.TimestampConverter;
  */
 @Log4j2
 public final class AccountBalancesFileLoader implements AutoCloseable {
-    private final Path filePath;
+    private final String fileName;
     private final Instant filenameTimestamp;
     private final AccountBalancesDataset dataset;
     private final TimestampConverter timestampConverter = new TimestampConverter();
@@ -63,15 +60,16 @@ public final class AccountBalancesFileLoader implements AutoCloseable {
      * @throws InvalidDatasetException  invalid file header
      * @throws FileNotFoundException
      */
-    public AccountBalancesFileLoader(BalanceParserProperties balanceProperties, Path filePath) throws IllegalArgumentException, InvalidDatasetException,
-            FileNotFoundException {
-        this.filePath = filePath;
+    public AccountBalancesFileLoader(BalanceParserProperties balanceProperties, String fileName,
+                                     InputStream inputStream)
+            throws IllegalArgumentException, InvalidDatasetException {
+        this.fileName = fileName;
         systemShardNum = balanceProperties.getMirrorProperties().getShard();
-        var info = new AccountBalancesFileInfo(filePath);
+        var info = new AccountBalancesFileInfo(fileName);
         filenameTimestamp = info.getFilenameTimestamp();
-        BufferedReader reader = new BufferedReader(new InputStreamReader(new FileInputStream(filePath
-                .toFile())), balanceProperties.getFileBufferSize());
-        dataset = new AccountBalancesDatasetV2(filePath.getFileName().toString(), reader);
+        BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream), balanceProperties
+                .getFileBufferSize());
+        dataset = new AccountBalancesDatasetV2(fileName, reader);
         insertBatchSize = balanceProperties.getBatchSize();
     }
 
@@ -84,14 +82,14 @@ public final class AccountBalancesFileLoader implements AutoCloseable {
         if (4 != cols.length) {
             throw new InvalidDatasetException(String.format(
                     "Invalid line in account balances file %s:line(%d):%s",
-                    filePath, line.getLineNumber(), line.getValue()));
+                    fileName, line.getLineNumber(), line.getValue()));
         }
 
         var shardNum = Long.valueOf(cols[0]);
         if (shardNum != systemShardNum) {
             throw new InvalidDatasetException(String.format(
                     "Invalid shardNum %d in account balances file %s:line(%d):%s",
-                    shardNum, filePath, line.getLineNumber(), line.getValue()));
+                    shardNum, fileName, line.getLineNumber(), line.getValue()));
         }
 
         try {
@@ -102,7 +100,7 @@ public final class AccountBalancesFileLoader implements AutoCloseable {
             ps.addBatch();
         } catch (NumberFormatException e) {
             throw new InvalidDatasetException(String.format("Invalid line in account balances file %s:line(%d):%s",
-                    filePath, line.getLineNumber(), line.getValue()));
+                    fileName, line.getLineNumber(), line.getValue()));
         }
     }
 
@@ -112,8 +110,8 @@ public final class AccountBalancesFileLoader implements AutoCloseable {
     private boolean processRecordStream(PreparedStatement ps, long consensusTimestamp,
                                         Stream<NumberedLine> stream) {
         var state = new Object() {
-            int recordsInCurrentBatch = 0;
-            boolean insertSuccess = true;
+            final int recordsInCurrentBatch = 0;
+            final boolean insertSuccess = true;
         };
         stream.forEachOrdered((line) -> {
             try {
@@ -162,7 +160,7 @@ public final class AccountBalancesFileLoader implements AutoCloseable {
             // The fact that the filename timestamp and timestamp in the file differ should still be investigated.
             log.error("Account balance dataset timestamp mismatch! Processing can continue, but this must be " +
                             "investigated! Dataset {} internal timestamp {} filename timestamp {}.",
-                    filePath.getFileName(), filenameTimestamp, consensusTimestamp);
+                    fileName, filenameTimestamp, consensusTimestamp);
         }
 
         // consensusTimestamp (from file) has been signed, filenameTimestamp has not.
@@ -173,7 +171,7 @@ public final class AccountBalancesFileLoader implements AutoCloseable {
         // 2) stream insert all the account_balances records.
         // 3) update/close the account_balance_set.
         //
-        log.info("Starting processing account balances file {}", filePath);
+        log.info("Starting processing account balances file {}", fileName);
         var stopwatch = Stopwatch.createStarted();
         try (Connection conn = DatabaseUtilities.getConnection()) {
             Stream<NumberedLine> stream = dataset.getRecordStream();
@@ -194,15 +192,15 @@ public final class AccountBalancesFileLoader implements AutoCloseable {
             if (processRecordStream(insertBalance, longConsensusTimestamp, stream)) {
                 updateSet.setLong(1, longConsensusTimestamp);
                 updateSet.execute();
-                log.info("Successfully processed account balances file {} with {} records in {}", filePath,
+                log.info("Successfully processed account balances file {} with {} records in {}", fileName,
                         validRowCount, stopwatch);
                 return true;
             } else {
-                log.error("ERRORS processing account balances file {} with {} records in {}", filePath,
+                log.error("ERRORS processing account balances file {} with {} records in {}", fileName,
                         validRowCount, stopwatch);
             }
         } catch (SQLException | InvalidDatasetException e) {
-            log.error("Exception processing account balances file {}", filePath, e);
+            log.error("Exception processing account balances file {}", fileName, e);
         }
         return false;
     }

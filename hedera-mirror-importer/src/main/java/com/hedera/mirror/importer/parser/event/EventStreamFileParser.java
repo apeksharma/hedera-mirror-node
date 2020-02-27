@@ -58,7 +58,6 @@ public class EventStreamFileParser implements FileParser {
 
     private static final Long PARENT_HASH_NULL = null;
     private static final long PARENT_HASH_NOT_FOUND_MATCH = -2;
-    private static final String PARSED_DIR = "/parsedEventStreamFiles/";
     private static Connection connect = null;
     private final ApplicationStatusRepository applicationStatusRepository;
     private final EventParserProperties parserProperties;
@@ -498,7 +497,7 @@ public class EventStreamFileParser implements FileParser {
             prevFileHash = applicationStatusRepository
                     .findByStatusCode(ApplicationStatusCode.LAST_PROCESSED_EVENT_HASH);
             if (loadResult == LoadResult.OK) {
-                Utility.moveFileToParsedDir(name, PARSED_DIR);
+                Utility.moveFileToParsedDir(name, parserProperties.getParsedPath());
             }
         }
         return true;
