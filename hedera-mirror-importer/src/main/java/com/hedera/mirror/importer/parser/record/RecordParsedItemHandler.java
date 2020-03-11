@@ -36,7 +36,7 @@ import com.hedera.mirror.importer.parser.ParsedItemHandler;
 public interface RecordParsedItemHandler extends ParsedItemHandler {
     void onTransaction(Transaction transaction) throws ImporterException;
 
-    void onCryptoTransferList(CryptoTransfer cryptoTransfer) throws ImporterException;
+    void onCryptoTransfer(CryptoTransfer cryptoTransfer) throws ImporterException;
 
     void onNonFeeTransfer(NonFeeTransfer nonFeeTransfer) throws ImporterException;
 

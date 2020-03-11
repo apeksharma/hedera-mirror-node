@@ -253,7 +253,7 @@ public class PostgresWritingRecordParsedItemHandler implements RecordParsedItemH
     }
 
     @Override
-    public void onCryptoTransferList(CryptoTransfer cryptoTransfer) throws ImporterException {
+    public void onCryptoTransfer(CryptoTransfer cryptoTransfer) throws ImporterException {
         try {
             sqlInsertTransferList.setLong(F_TRANSFERLIST.CONSENSUS_TIMESTAMP.ordinal(),
                     cryptoTransfer.getConsensusTimestamp());

@@ -109,8 +109,8 @@ public class PostgresWritingRecordParserItemHandlerTest extends IntegrationTest 
         CryptoTransfer cryptoTransfer2 = new CryptoTransfer(2L, -2L, 0L, 2L);
 
         // when
-        postgresWriter.onCryptoTransferList(cryptoTransfer1);
-        postgresWriter.onCryptoTransferList(cryptoTransfer2);
+        postgresWriter.onCryptoTransfer(cryptoTransfer1);
+        postgresWriter.onCryptoTransfer(cryptoTransfer2);
         completeFileAndCommit();
 
         // then
@@ -255,7 +255,7 @@ public class PostgresWritingRecordParserItemHandlerTest extends IntegrationTest 
     void onError() {
         // when
         postgresWriter.onNonFeeTransfer(new NonFeeTransfer(1L, 1L, 0L, 1L));
-        postgresWriter.onCryptoTransferList(new CryptoTransfer(2L, -2L, 0L, 2L));
+        postgresWriter.onCryptoTransfer(new CryptoTransfer(2L, -2L, 0L, 2L));
         postgresWriter.onError();
 
         // then

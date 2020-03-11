@@ -29,13 +29,20 @@ import lombok.extern.log4j.Log4j2;
 import org.apache.commons.codec.binary.Hex;
 import org.apache.commons.csv.CSVFormat;
 import org.apache.commons.csv.CSVPrinter;
+import org.apache.commons.lang3.NotImplementedException;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
+import com.hedera.mirror.importer.domain.ContractResult;
 import com.hedera.mirror.importer.domain.CryptoTransfer;
 import com.hedera.mirror.importer.domain.Entities;
 import com.hedera.mirror.importer.domain.FileData;
+import com.hedera.mirror.importer.domain.LiveHash;
+import com.hedera.mirror.importer.domain.NonFeeTransfer;
 import com.hedera.mirror.importer.domain.TopicMessage;
 import com.hedera.mirror.importer.domain.Transaction;
+import com.hedera.mirror.importer.exception.ImporterException;
+import com.hedera.mirror.importer.parser.RecordStreamFileListener;
+import com.hedera.mirror.importer.parser.record.RecordParsedItemHandler;
 import com.hedera.mirror.importer.util.Utility;
 
 /**
@@ -84,7 +91,7 @@ import com.hedera.mirror.importer.util.Utility;
  */
 @Named
 @Log4j2
-public class PostgresCSVDomainWriter implements DomainWriter {
+public class PostgresCSVDomainWriter implements RecordStreamFileListener, RecordParsedItemHandler, DomainWriter {
 
     private final CSVPrinter transactionsWriter;
     private final CSVPrinter cryptoTransferListsWriter;
@@ -180,7 +187,7 @@ public class PostgresCSVDomainWriter implements DomainWriter {
     }
 
     @Override
-    public void addTransaction(Transaction transaction) {
+    public void onTransaction(Transaction transaction) {
         try {
             transactionsWriter.printRecord(
                     transaction.getNodeAccountId(), toHex(transaction.getMemo()), transaction.getPayerAccountId(),
@@ -196,14 +203,14 @@ public class PostgresCSVDomainWriter implements DomainWriter {
     }
 
     @Override
-    public void addEntity(Entities entity) {
+    public void onEntity(Entities entity) {
         try {
             entitiesWriter.printRecord(
                     entity.getId(), entity.getEntityNum(), entity.getEntityRealm(), entity.getEntityShard(),
                     entity.getEntityTypeId(), entity.getAutoRenewPeriod(), toHex(entity.getKey()), entity
                             .getProxyAccountId(), entity.isDeleted(), entity.getExpiryTimeNs(), entity
                             .getEd25519PublicKeyHex(), toHex(entity.getSubmitKey()), entity.getMemo(),
-                            entity.getAutoRenewAccount() != null ? entity.getAutoRenewAccount().getId() : null);
+                    entity.getAutoRenewAccount() != null ? entity.getAutoRenewAccount().getId() : null);
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
@@ -211,7 +218,7 @@ public class PostgresCSVDomainWriter implements DomainWriter {
     }
 
     @Override
-    public void addCryptoTransfer(CryptoTransfer cryptoTransfer) {
+    public void onCryptoTransfer(CryptoTransfer cryptoTransfer) {
         try {
             cryptoTransferListsWriter.printRecord(
                     cryptoTransfer.getConsensusTimestamp(), cryptoTransfer.getRealmNum(), cryptoTransfer.getEntityNum(),
@@ -223,7 +230,7 @@ public class PostgresCSVDomainWriter implements DomainWriter {
     }
 
     @Override
-    public void addFileData(FileData fileData) {
+    public void onFileData(FileData fileData) {
         try {
             fileDataWriter.printRecord(toHex(fileData.getFileData()), fileData.getConsensusTimestamp());
         } catch (IOException e) {
@@ -234,7 +241,7 @@ public class PostgresCSVDomainWriter implements DomainWriter {
     }
 
     @Override
-    public void addTopicMessage(TopicMessage topicMessage) {
+    public void onTopicMessage(TopicMessage topicMessage) {
         try {
             topicMessageWriter.printRecord(topicMessage.getConsensusTimestamp(), topicMessage.getRealmNum(),
                     topicMessage.getTopicNum(), toHex(topicMessage.getMessage()), toHex(topicMessage.getRunningHash()),
@@ -251,6 +258,21 @@ public class PostgresCSVDomainWriter implements DomainWriter {
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
+    }
+
+    @Override
+    public void onNonFeeTransfer(NonFeeTransfer nonFeeTransfer) throws ImporterException {
+        throw new NotImplementedException("not implemented");
+    }
+
+    @Override
+    public void onContractResult(ContractResult contractResult) throws ImporterException {
+        throw new NotImplementedException("not implemented");
+    }
+
+    @Override
+    public void onLiveHash(LiveHash liveHash) throws ImporterException {
+        throw new NotImplementedException("not implemented");
     }
 
     @Data

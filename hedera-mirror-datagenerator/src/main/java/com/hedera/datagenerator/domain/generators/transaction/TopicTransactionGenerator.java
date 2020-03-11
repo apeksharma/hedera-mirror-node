@@ -25,6 +25,9 @@ import java.util.Map;
 import java.util.Random;
 import java.util.function.Consumer;
 import javax.inject.Named;
+
+import com.hedera.mirror.importer.parser.record.RecordParsedItemHandler;
+
 import lombok.Getter;
 import lombok.extern.log4j.Log4j2;
 
@@ -53,8 +56,9 @@ public class TopicTransactionGenerator extends TransactionGenerator {
     private final Map<Long, Integer> topicToNextSequenceNumber;
 
     public TopicTransactionGenerator(
-            TopicTransactionProperties properties, EntityManager entityManager, DomainWriter domainWriter) {
-        super(entityManager, domainWriter, properties.getNumSeedTopics());
+            TopicTransactionProperties properties, EntityManager entityManager,
+            RecordParsedItemHandler recordParsedItemHandler) {
+        super(entityManager, recordParsedItemHandler, properties.getNumSeedTopics());
         this.properties = properties;
         transactionDistribution = new FrequencyDistribution<>(Map.of(
                 this::createTopic, this.properties.getCreatesFrequency(),
@@ -118,6 +122,6 @@ public class TopicTransactionGenerator extends TransactionGenerator {
         byte[] messageBytes = new byte[(int) messageSize];
         new Random().nextBytes(messageBytes);
         topicMessage.setMessage(messageBytes);
-        domainWriter.addTopicMessage(topicMessage);
+        recordParsedItemHandler.onTopicMessage(topicMessage);
     }
 }

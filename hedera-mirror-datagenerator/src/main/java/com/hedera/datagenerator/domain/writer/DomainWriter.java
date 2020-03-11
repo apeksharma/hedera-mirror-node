@@ -26,17 +26,12 @@ import com.hedera.mirror.importer.domain.Entities;
 import com.hedera.mirror.importer.domain.FileData;
 import com.hedera.mirror.importer.domain.TopicMessage;
 import com.hedera.mirror.importer.domain.Transaction;
+import com.hedera.mirror.importer.parser.record.RecordParsedItemHandler;
 
-public interface DomainWriter extends Closeable {
-    void addTransaction(Transaction transaction);
+// TODO: comment here to explain oddity
+public interface DomainWriter {
 
-    void addEntity(Entities entity);
-
-    void addCryptoTransfer(CryptoTransfer cryptoTransfer);
-
-    void addFileData(FileData fileData);
-
-    void addTopicMessage(TopicMessage topicMessage);
+    void onEntity(Entities entity);
 
     void addAccountBalances(long consensusNs, long balance, long accountNum);
 }

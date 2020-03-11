@@ -706,7 +706,7 @@ public class RecordItemParser implements RecordItemListener {
     }
 
     private void addCryptoTransferList(long consensusTimestamp, long realmNum, long accountNum, long amount) {
-        recordParsedItemHandler.onCryptoTransferList(new CryptoTransfer(consensusTimestamp, amount, realmNum, accountNum));
+        recordParsedItemHandler.onCryptoTransfer(new CryptoTransfer(consensusTimestamp, amount, realmNum, accountNum));
     }
 
     private static boolean isFileAddressBook(FileID fileId) {

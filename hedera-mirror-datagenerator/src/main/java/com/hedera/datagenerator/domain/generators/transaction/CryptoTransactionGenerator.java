@@ -29,12 +29,12 @@ import lombok.extern.log4j.Log4j2;
 import com.hedera.datagenerator.common.CryptoTransactionProperties;
 import com.hedera.datagenerator.common.EntityManager;
 import com.hedera.datagenerator.common.TransactionGenerator;
-import com.hedera.datagenerator.domain.writer.DomainWriter;
 import com.hedera.datagenerator.sampling.Distribution;
 import com.hedera.datagenerator.sampling.FrequencyDistribution;
 import com.hedera.mirror.importer.domain.CryptoTransfer;
 import com.hedera.mirror.importer.domain.Entities;
 import com.hedera.mirror.importer.domain.Transaction;
+import com.hedera.mirror.importer.parser.record.RecordParsedItemHandler;
 
 /**
  * Generates crypto transactions (CRYPTOCREATEACCOUNT, CRYPTOUPDATEACCOUNT, CRYPTOTRANSFER, CRYPTODELETE).
@@ -48,8 +48,9 @@ public class CryptoTransactionGenerator extends TransactionGenerator {
     private final Distribution<Consumer<Transaction>> transactionDistribution;
 
     public CryptoTransactionGenerator(
-            CryptoTransactionProperties properties, EntityManager entityManager, DomainWriter domainWriter) {
-        super(entityManager, domainWriter, properties.getNumSeedAccounts());
+            CryptoTransactionProperties properties, EntityManager entityManager,
+            RecordParsedItemHandler recordParsedItemHandler) {
+        super(entityManager, recordParsedItemHandler, properties.getNumSeedAccounts());
         this.properties = properties;
         transactionDistribution = new FrequencyDistribution<>(Map.of(
                 this::createAccount, this.properties.getCreatesFrequency(),
@@ -71,9 +72,9 @@ public class CryptoTransactionGenerator extends TransactionGenerator {
         Entities newAccount = entityManager.getAccounts().newEntity();
         transaction.setEntity(newAccount);
         transaction.setPayerAccountId(entityManager.getPortalEntity());
-        domainWriter.addCryptoTransfer(createCryptoTransfer(
+        recordParsedItemHandler.onCryptoTransfer(createCryptoTransfer(
                 transaction.getConsensusNs(), entityManager.getPortalEntity(), -value));
-        domainWriter.addCryptoTransfer(createCryptoTransfer(
+        recordParsedItemHandler.onCryptoTransfer(createCryptoTransfer(
                 transaction.getConsensusNs(), newAccount.getId(), value));
         log.trace("CRYPTOCREATEACCOUNT transaction: entity {}", newAccount.getId());
     }
@@ -97,10 +98,10 @@ public class CryptoTransactionGenerator extends TransactionGenerator {
 
         final long singleTransferAmount = 1_000L;
         for (int i = 0; i < numTransferLists; i++) {
-            domainWriter.addCryptoTransfer(createCryptoTransfer(
+            recordParsedItemHandler.onCryptoTransfer(createCryptoTransfer(
                     transaction.getConsensusNs(), accountIds.get(i + 1), singleTransferAmount));
         }
-        domainWriter.addCryptoTransfer(createCryptoTransfer(
+        recordParsedItemHandler.onCryptoTransfer(createCryptoTransfer(
                 transaction.getConsensusNs(), accountIds.get(0), -1 * singleTransferAmount * numTransferLists));
         transaction.setPayerAccountId(accountIds.get(0));
         log.trace("CRYPTOTRANSFER transaction: num transfer lists {}", numTransferLists);
