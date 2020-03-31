@@ -1,4 +1,4 @@
-package com.hedera.mirror.importer.domain;
+package com.hedera.mirror.importer.parser.record.transactionhandler;
 
 /*-
  * ‌
@@ -20,18 +20,20 @@ package com.hedera.mirror.importer.domain;
  * ‍
  */
 
-import com.hederahashgraph.api.proto.java.AccountID;
-import lombok.Value;
+import javax.inject.Named;
+import lombok.AllArgsConstructor;
 
-@Value
-public class EntityId {
-    private Long id;
-    private Long entityShard;
-    private Long entityRealm;
-    private Long entityNum;
-    private Integer entityTypeId;
+import com.hedera.mirror.importer.domain.EntityId;
+import com.hedera.mirror.importer.parser.domain.RecordItem;
 
-    static public EntityId of(AccountID accountID) {
+@Named
+@AllArgsConstructor
+public class CryptoDeleteClaimTransactionHandler implements TransactionHandler {
+    private final EntityHelper entityHelper;
 
+    @Override
+    public EntityId getId(RecordItem recordItem) {
+        return entityHelper.create(
+                recordItem.getTransactionBody().getCryptoDeleteClaim().getAccountIDToDeleteFrom());
     }
 }
