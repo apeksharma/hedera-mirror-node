@@ -20,11 +20,14 @@ package com.hedera.mirror.importer.domain;
  * ‍
  */
 
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import javax.persistence.Entity;
 import javax.persistence.Id;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+
+import com.hedera.mirror.importer.converter.ByteArraySerializer;
 
 @Data
 @Entity
@@ -35,10 +38,12 @@ public class TopicMessage {
     @Id
     private long consensusTimestamp;
 
+    @JsonSerialize(using = ByteArraySerializer.class)
     private byte[] message;
 
     private int realmNum;
 
+    @JsonSerialize(using = ByteArraySerializer.class)
     private byte[] runningHash;
 
     private long sequenceNumber;

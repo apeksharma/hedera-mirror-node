@@ -1,4 +1,4 @@
-package com.hedera.mirror.importer.parser.record.entity.sql;
+package com.hedera.mirror.importer.repository;
 
 /*-
  * ‌
@@ -20,15 +20,8 @@ package com.hedera.mirror.importer.parser.record.entity.sql;
  * ‍
  */
 
-import javax.validation.constraints.Min;
-import lombok.Data;
-import org.springframework.boot.context.properties.ConfigurationProperties;
-import org.springframework.validation.annotation.Validated;
+import com.hedera.mirror.importer.domain.EntityId;
 
-@Data
-@Validated
-@ConfigurationProperties("hedera.mirror.importer.parser.record.entity.sql")
-public class SqlProperties {
-    @Min(1)
-    private int threads = 10;
+public interface EntityRepositoryCustom {
+    void insertEntityIdDoNothingOnConflict(EntityId entityId);
 }

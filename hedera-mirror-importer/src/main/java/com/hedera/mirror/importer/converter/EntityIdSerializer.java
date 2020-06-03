@@ -1,4 +1,4 @@
-package com.hedera.mirror.importer.parser.record.entity.sql;
+package com.hedera.mirror.importer.converter;
 
 /*-
  * ‌
@@ -20,15 +20,20 @@ package com.hedera.mirror.importer.parser.record.entity.sql;
  * ‍
  */
 
-import javax.validation.constraints.Min;
-import lombok.Data;
-import org.springframework.boot.context.properties.ConfigurationProperties;
-import org.springframework.validation.annotation.Validated;
+import com.fasterxml.jackson.core.JsonGenerator;
+import com.fasterxml.jackson.databind.JsonSerializer;
+import com.fasterxml.jackson.databind.SerializerProvider;
+import java.io.IOException;
+import javax.inject.Named;
 
-@Data
-@Validated
-@ConfigurationProperties("hedera.mirror.importer.parser.record.entity.sql")
-public class SqlProperties {
-    @Min(1)
-    private int threads = 10;
+import com.hedera.mirror.importer.domain.EntityId;
+
+@Named
+public class EntityIdSerializer extends JsonSerializer<EntityId> {
+    @Override
+    public void serialize(EntityId value, JsonGenerator gen, SerializerProvider serializers) throws IOException {
+        if (value != null) {
+            gen.writeNumber(value.getId());
+        }
+    }
 }
