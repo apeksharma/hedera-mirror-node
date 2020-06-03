@@ -40,7 +40,7 @@ public class CryptoTransferRepositoryTest extends AbstractRepositoryTest {
         long amount = 40L;
         CryptoTransfer cryptoTransfer = new CryptoTransfer();
         cryptoTransfer.setConsensusTimestamp(consensusNs);
-        cryptoTransfer.setEntityId(entity);
+        cryptoTransfer.setEntityId(entity.getId());
         cryptoTransfer.setAmount(amount);
 
         cryptoTransfer = cryptoTransferRepository.save(cryptoTransfer);

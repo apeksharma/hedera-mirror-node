@@ -17,6 +17,7 @@
     </parent>
 
     <properties>
+        <commons-csv.version>1.8</commons-csv.version>
         <commons-io.version>2.6</commons-io.version>
         <guava.version>29.0-jre</guava.version>
         <s3mock.version>0.2.5</s3mock.version>
@@ -95,6 +96,11 @@
         </dependency>
         <dependency>
             <groupId>org.apache.commons</groupId>
+            <artifactId>commons-csv</artifactId>
+            <version>${commons-csv.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.commons</groupId>
             <artifactId>commons-lang3</artifactId>
         </dependency>
         <dependency>
@@ -112,7 +118,6 @@
         <dependency>
             <groupId>org.postgresql</groupId>
             <artifactId>postgresql</artifactId>
-            <scope>runtime</scope>
         </dependency>
         <dependency>
             <groupId>org.projectlombok</groupId>

@@ -113,8 +113,8 @@ public class SqlEntityListenerTest extends IntegrationTest {
     @Test
     void onCryptoTransferList() throws Exception {
         // given
-        CryptoTransfer cryptoTransfer1 = new CryptoTransfer(1L, 1L, EntityId.of(0L, 0L, 1L, ACCOUNT));
-        CryptoTransfer cryptoTransfer2 = new CryptoTransfer(2L, -2L, EntityId.of(0L, 0L, 2L, ACCOUNT));
+        CryptoTransfer cryptoTransfer1 = new CryptoTransfer(1L, 1L, EntityId.of(0L, 0L, 1L, ACCOUNT).getId());
+        CryptoTransfer cryptoTransfer2 = new CryptoTransfer(2L, -2L, EntityId.of(0L, 0L, 2L, ACCOUNT).getId());
 
         // when
         sqlEntityListener.onCryptoTransfer(cryptoTransfer1);
@@ -271,7 +271,7 @@ public class SqlEntityListenerTest extends IntegrationTest {
     void onError() {
         // when
         sqlEntityListener.onNonFeeTransfer(new NonFeeTransfer(1L, 1L, EntityId.of(0L, 0L, 1L, ACCOUNT)));
-        sqlEntityListener.onCryptoTransfer(new CryptoTransfer(2L, -2L, EntityId.of(0L, 0L, 2L, ACCOUNT)));
+        sqlEntityListener.onCryptoTransfer(new CryptoTransfer(2L, -2L, EntityId.of(0L, 0L, 2L, ACCOUNT).getId()));
         sqlEntityListener.onError();
 
         // then

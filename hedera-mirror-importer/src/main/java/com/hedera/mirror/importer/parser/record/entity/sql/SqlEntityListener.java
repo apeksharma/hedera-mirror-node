@@ -27,7 +27,6 @@ import java.sql.SQLException;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.concurrent.TimeUnit;
-import javax.inject.Named;
 import javax.sql.DataSource;
 import lombok.AllArgsConstructor;
 import lombok.Data;
@@ -54,7 +53,7 @@ import com.hedera.mirror.importer.parser.record.entity.EntityListener;
 import com.hedera.mirror.importer.repository.RecordFileRepository;
 
 @Log4j2
-@Named
+//@Named
 @RequiredArgsConstructor
 @ConditionOnEntityRecordParser
 public class SqlEntityListener implements EntityListener, RecordStreamFileListener {
@@ -267,7 +266,7 @@ public class SqlEntityListener implements EntityListener, RecordStreamFileListen
             sqlInsertTransferList.setLong(F_TRANSFERLIST.CONSENSUS_TIMESTAMP.ordinal(),
                     cryptoTransfer.getConsensusTimestamp());
             sqlInsertTransferList.setLong(F_TRANSFERLIST.AMOUNT.ordinal(), cryptoTransfer.getAmount());
-            sqlInsertTransferList.setLong(F_TRANSFERLIST.ENTITY_ID.ordinal(), cryptoTransfer.getEntityId().getId());
+            sqlInsertTransferList.setLong(F_TRANSFERLIST.ENTITY_ID.ordinal(), cryptoTransfer.getEntityId());
             sqlInsertTransferList.addBatch();
         } catch (SQLException e) {
             throw new ParserSQLException(e);

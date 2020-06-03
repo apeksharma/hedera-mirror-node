@@ -25,12 +25,13 @@ import javax.persistence.Id;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import org.springframework.data.domain.Persistable;
 
 @Data
 @Entity
 @NoArgsConstructor
 @AllArgsConstructor
-public class TopicMessage {
+public class TopicMessage implements Persistable<Long> {
 
     @Id
     private long consensusTimestamp;
@@ -46,4 +47,14 @@ public class TopicMessage {
     private int topicNum;
 
     private int runningHashVersion;
+
+    @Override
+    public Long getId() {
+        return consensusTimestamp;
+    }
+
+    @Override
+    public boolean isNew() {
+        return true; // Since we never update transactions and use a natural ID, avoid Hibernate querying before insert
+    }
 }

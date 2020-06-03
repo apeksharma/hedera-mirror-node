@@ -20,12 +20,15 @@ package com.hedera.mirror.importer.domain;
  * ‍
  */
 
+import java.io.Serializable;
 import javax.persistence.Convert;
 import javax.persistence.Entity;
 import javax.persistence.Id;
+import javax.persistence.IdClass;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import org.springframework.data.domain.Persistable;
 
 import com.hedera.mirror.importer.converter.EntityIdConverter;
 
@@ -33,12 +36,34 @@ import com.hedera.mirror.importer.converter.EntityIdConverter;
 @Entity
 @NoArgsConstructor
 @AllArgsConstructor
-public class CryptoTransfer {
+@IdClass(CryptoTransfer.class)
+public class CryptoTransfer implements Persistable<CryptoTransfer>, Serializable {
+
     @Id
     private Long consensusTimestamp;
 
+    @Id
     private Long amount;
 
-    @Convert(converter = EntityIdConverter.class)
-    private EntityId entityId;
+//    @Convert(converter = EntityIdConverter.class)
+    @Id
+    private Long entityId;
+
+    @Override
+    public CryptoTransfer getId() {
+        return this;
+    }
+
+    @Override
+    public boolean isNew() {
+        return true; // Since we never update transactions and use a natural ID, avoid Hibernate querying before insert
+    }
+
+//    @Data
+//    public static class PrimaryKey {
+//        private Long consensusTimestamp;
+//        private Long amount;
+//        private Long realmNum;
+//        private Long entityNum;
+//    }
 }

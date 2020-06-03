@@ -33,6 +33,7 @@ import com.hedera.mirror.importer.converter.EntityIdConverter;
 @Entity
 @NoArgsConstructor
 @AllArgsConstructor
+// TODO: same as CryptoTransfer
 public class NonFeeTransfer {
     // There is not actually a pk on non_fee_transfer.
     @Id

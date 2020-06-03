@@ -34,4 +34,6 @@ public class SqlProperties {
      */
     @Min(1)
     private int batchSize = 2000;
+
+    private int executorSize = 50;
 }

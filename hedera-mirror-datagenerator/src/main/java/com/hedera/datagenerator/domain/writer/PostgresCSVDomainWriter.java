@@ -196,7 +196,7 @@ public class PostgresCSVDomainWriter implements DomainWriter {
     @Override
     public void addCryptoTransfer(CryptoTransfer cryptoTransfer) {
         try {
-            cryptoTransferListsWriter.printRecord(cryptoTransfer.getEntityId().getId(),
+            cryptoTransferListsWriter.printRecord(cryptoTransfer.getEntityId(),
                     cryptoTransfer.getConsensusTimestamp(), cryptoTransfer.getAmount());
         } catch (IOException e) {
             throw new RuntimeException(e);
