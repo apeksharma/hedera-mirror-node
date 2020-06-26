@@ -123,7 +123,6 @@ public class RecordFileParser implements FileParser {
             applicationStatusRepository.updateStatusValue(
                     ApplicationStatusCode.LAST_PROCESSED_RECORD_HASH, recordFile.getFileHash());
             success = true;
-            log.info("Total time to parse file: {}ms", stopwatch.elapsed(TimeUnit.MILLISECONDS));
         } finally {
             var elapsedTimeMillis = Duration.between(startTime, Instant.now()).toMillis();
             var rate = elapsedTimeMillis > 0 ? (int) (1000.0 * counter.get() / elapsedTimeMillis) : 0;
